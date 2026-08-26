@@ -9,7 +9,15 @@ if (!localStorage.getItem("pdp_token")) {
   localStorage.setItem("pdp_token", MOCK_TOKEN);
 }
 if (!localStorage.getItem("pdp_tenant_id")) {
-  localStorage.setItem("pdp_tenant_id", "tenant-demo");
+  localStorage.setItem("pdp_tenant_id", "tenant-default");
+}
+// Set demo user as admin so all nav items (including dev console) show
+if (!localStorage.getItem("pdp_user")) {
+  localStorage.setItem("pdp_user", JSON.stringify({ id: "demo", username: "demo", display_name: "美业管理员", role: "admin" }));
+}
+// Set demo industry id to match mock tenant data
+if (!localStorage.getItem("pdp_industry_id")) {
+  localStorage.setItem("pdp_industry_id", "6601012c-44fb-4a58-8fab-3d27d7d12ace");
 }
 
 function mockResponse(path: string, method: string, body?: string) {
@@ -261,8 +269,9 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
   const data = mockResponse(cleanPath, method, init?.body as string);
 
   if (data === null) {
-    // Return empty 200
-    return new Response(JSON.stringify({ ok: true }), {
+    // For GET to unknown endpoints, return [] (safer for components expecting arrays)
+    const fallback = method === "GET" ? [] : { ok: true };
+    return new Response(JSON.stringify(fallback), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
