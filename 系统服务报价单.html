@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Token 成本测算（内部详版）</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f5f9f8;
+      color: #202945;
+      line-height: 1.7;
+      font-size: 14px;
+    }
+    .page { max-width: 960px; margin: 0 auto; padding: 32px 20px 60px; }
+    .tag { color: #5f6b7a; font-size: 12px; letter-spacing: 2px; }
+    h1 { margin: 6px 0 4px; font-size: 24px; }
+    .meta { color: #5f6b7a; font-size: 13px; margin-bottom: 18px; }
+    .section { background: #fff; border: 1px solid #dce8e5; border-radius: 12px; padding: 20px; margin-bottom: 14px; }
+    .section h2 { margin: 0 0 10px; font-size: 16px; }
+    .sub { color: #5f6b7a; font-size: 12px; margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #dce8e5; font-size: 13px; vertical-align: top; }
+    th { color: #5f6b7a; font-weight: 600; background: #f7faf9; }
+    .num { text-align: right; white-space: nowrap; }
+    tr.total td { font-weight: 700; background: #e5f6f3; }
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .card { border: 1px solid #dce8e5; border-radius: 10px; padding: 14px; background: #fff; }
+    .card .label { color: #5f6b7a; font-size: 12px; }
+    .card .value { font-size: 22px; font-weight: 700; margin-top: 4px; color: #00a985; }
+    .card .desc { color: #5f6b7a; font-size: 12px; margin-top: 4px; }
+    .cost {
+      background: #e5f6f3; border: 1px solid #00a985; border-radius: 12px;
+      padding: 18px 20px; display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px;
+    }
+    .cost .label { color: #5f6b7a; font-size: 13px; }
+    .cost .num { font-size: 40px; font-weight: 800; color: #00a985; }
+    .cost .unit { color: #5f6b7a; font-size: 14px; }
+    .note { color: #5f6b7a; font-size: 13px; }
+    .note b { color: #202945; }
+    @media (max-width: 760px) {
+      .cards { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="tag">内部成本测算</div>
+    <h1>Token 成本测算（调用数据 · 生成策略 · 下发执行）</h1>
+    <div class="meta">客户量级：月活 2-3 千 · 月销约 20 万 · 天猫 2 万+ 单 T+1 · 模型：DeepSeek</div>
+
+    <div class="cost">
+      <div class="label">建议月度预算</div>
+      <span class="num">¥800</span>
+      <span class="unit">/月 · 含 2,000 万 Token</span>
+    </div>
+
+    <div class="section">
+      <h2>一、调用数据</h2>
+      <div class="sub">订单 T+1 读取、用户对话与渠道信号结构化</div>
+      <table>
+        <thead><tr><th>用途</th><th>月次数</th><th>Input/次</th><th>Output/次</th><th class="num">月 Input</th><th class="num">月 Output</th></tr></thead>
+        <tbody>
+          <tr><td>订单 T+1 聚合分析</td><td>30</td><td>6,000</td><td>1,500</td><td class="num">0.18M</td><td class="num">0.05M</td></tr>
+          <tr><td>重点订单抽样解析</td><td>2,000</td><td>2,000</td><td>400</td><td class="num">4.00M</td><td class="num">0.80M</td></tr>
+          <tr><td>渠道信号 / 对话结构化</td><td>3,000</td><td>1,500</td><td>300</td><td class="num">4.50M</td><td class="num">0.90M</td></tr>
+          <tr class="total"><td>小计</td><td></td><td></td><td></td><td class="num">8.68M</td><td class="num">1.75M</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>二、生成策略</h2>
+      <div class="sub">飞轮洞察、活动资产包、内容与话术生成</div>
+      <table>
+        <thead><tr><th>用途</th><th>月次数</th><th>Input/次</th><th>Output/次</th><th class="num">月 Input</th><th class="num">月 Output</th></tr></thead>
+        <tbody>
+          <tr><td>飞轮热点 / 需求洞察</td><td>30</td><td>5,000</td><td>1,000</td><td class="num">0.15M</td><td class="num">0.03M</td></tr>
+          <tr><td>活动资产包生成</td><td>12</td><td>15,000</td><td>4,000</td><td class="num">0.18M</td><td class="num">0.05M</td></tr>
+          <tr><td>内容 / 话术生成</td><td>300</td><td>3,000</td><td>800</td><td class="num">0.90M</td><td class="num">0.24M</td></tr>
+          <tr class="total"><td>小计</td><td></td><td></td><td></td><td class="num">1.23M</td><td class="num">0.32M</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>三、下发执行</h2>
+      <div class="sub">触达文案、跟进回访、验收复盘</div>
+      <table>
+        <thead><tr><th>用途</th><th>月次数</th><th>Input/次</th><th>Output/次</th><th class="num">月 Input</th><th class="num">月 Output</th></tr></thead>
+        <tbody>
+          <tr><td>触达文案 / 执行话术</td><td>800</td><td>2,000</td><td>500</td><td class="num">1.60M</td><td class="num">0.40M</td></tr>
+          <tr><td>跟进 / 回访</td><td>300</td><td>1,500</td><td>400</td><td class="num">0.45M</td><td class="num">0.12M</td></tr>
+          <tr><td>验收复盘</td><td>8</td><td>8,000</td><td>2,000</td><td class="num">0.06M</td><td class="num">0.02M</td></tr>
+          <tr class="total"><td>小计</td><td></td><td></td><td></td><td class="num">2.11M</td><td class="num">0.54M</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>四、汇总与预算分摊</h2>
+      <div class="cards">
+        <div class="card"><div class="label">月 Token 总量</div><div class="value">约 1,460 万</div><div class="desc">Input 1,202 万 + Output 260 万</div></div>
+        <div class="card"><div class="label">建议预算</div><div class="value">¥800/月</div><div class="desc">含 2,000 万 Token，覆盖并留富余</div></div>
+        <div class="card"><div class="label">客服全量 AI</div><div class="value">¥500-1,500/月</div><div class="desc">企微客服自动回复全覆盖场景</div></div>
+      </div>
+      <table style="margin-top:12px">
+        <thead><tr><th>阶段</th><th>Token 占比</th><th class="num">预算分摊</th></tr></thead>
+        <tbody>
+          <tr><td>调用数据</td><td>约 72%</td><td class="num">约 ¥580</td></tr>
+          <tr><td>生成策略</td><td>约 10%</td><td class="num">约 ¥80</td></tr>
+          <tr><td>下发执行</td><td>约 18%</td><td class="num">约 ¥140</td></tr>
+          <tr class="total"><td>合计</td><td>100%</td><td class="num">¥800</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <b>口径说明：</b>预算按 DeepSeek API 官方价并预留 30% 缓冲与峰谷波动；天猫订单按聚合 + 重点订单抽样，不逐单解析；向量化使用本地模型，不产生 Token 费用；短信、广告费、数据平台订阅不在本测算内。
+    </div>
+  </div>
+</body>
+</html>

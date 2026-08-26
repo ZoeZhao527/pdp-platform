@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>私域运营中台 · 迭代方案</title>
+  <style>
+    :root {
+      --bg: #070d17;
+      --bg2: #0b1626;
+      --panel: rgba(13, 25, 43, 0.78);
+      --line: rgba(0, 224, 184, 0.18);
+      --ink: #e8f3f5;
+      --muted: #8aa3b4;
+      --brand: #00e0b8;
+      --brand2: #3aa7ff;
+      --purple: #8b7cf6;
+      --amber: #ffb84d;
+      --red: #ff6b6b;
+      --glow: 0 0 22px rgba(0, 224, 184, 0.25);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(1100px 500px at 15% -5%, rgba(0, 224, 184, 0.12), transparent 60%),
+        radial-gradient(900px 480px at 90% 0%, rgba(58, 167, 255, 0.10), transparent 55%),
+        linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+      background-attachment: fixed;
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 1.7;
+      overflow-x: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0, 224, 184, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 224, 184, 0.035) 1px, transparent 1px);
+      background-size: 42px 42px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .page { max-width: 1060px; margin: 0 auto; padding: 34px 22px 70px; position: relative; z-index: 1; }
+    .hero { text-align: center; padding: 18px 0 26px; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      color: var(--brand); font-size: 12px; letter-spacing: 2px;
+      border: 1px solid var(--line); border-radius: 999px; padding: 4px 14px;
+      background: rgba(0, 224, 184, 0.06); box-shadow: var(--glow);
+    }
+    .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 8px var(--brand); animation: pulse 1.6s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+    h1 { font-size: 32px; margin: 14px 0 8px; letter-spacing: 1px; }
+    h1 .grad { background: linear-gradient(90deg, var(--brand), var(--brand2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .sub { color: var(--muted); margin: 0; }
+    .chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 16px; }
+    .chip { border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 12px; color: var(--muted); background: rgba(13,25,43,0.6); }
+    .chip b { color: var(--brand); font-weight: 600; }
+    .section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 22px;
+      margin-bottom: 18px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 14px 40px rgba(0,0,0,0.35);
+      animation: rise 0.6s ease both;
+    }
+    @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+    .sec-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .sec-head .no {
+      width: 30px; height: 30px; display: grid; place-items: center;
+      border: 1px solid var(--brand); color: var(--brand); border-radius: 8px;
+      font-weight: 700; font-size: 13px; box-shadow: var(--glow);
+    }
+    .sec-head h2 { margin: 0; font-size: 18px; letter-spacing: 1px; }
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .cell { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: rgba(8,18,32,0.55); }
+    .cell b { color: var(--brand); display: block; margin-bottom: 3px; }
+    ul { margin: 6px 0 0; padding-left: 20px; }
+    li { margin: 4px 0; color: #c8dae4; }
+    li b { color: var(--brand2); }
+    .gap-list li::marker { color: var(--red); }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--line); font-size: 13px; vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; letter-spacing: 1px; background: rgba(0,224,184,0.05); }
+    tr:hover td { background: rgba(0,224,184,0.04); }
+    .tree-wrap { background: rgba(8,18,32,0.6); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    .timeline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; position: relative; margin-top: 14px; }
+    .timeline::before { content: ""; position: absolute; top: 20px; left: 6%; right: 6%; height: 2px; background: linear-gradient(90deg, var(--brand), var(--brand2), var(--purple), var(--amber)); opacity: 0.5; }
+    .phase { position: relative; background: rgba(8,18,32,0.6); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    .phase .node {
+      width: 14px; height: 14px; border-radius: 50%; margin: 0 auto 8px;
+      background: var(--brand); box-shadow: 0 0 14px var(--brand);
+    }
+    .phase h3 { margin: 0 0 6px; font-size: 15px; text-align: center; }
+    .phase .weeks { text-align: center; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+    .tag { display: inline-block; border-radius: 6px; padding: 2px 10px; font-size: 12px; font-weight: 600; }
+    .tag.p1 { background: rgba(0,224,184,0.12); color: var(--brand); }
+    .tag.p2 { background: rgba(139,124,246,0.14); color: var(--purple); }
+    .tag.p3 { background: rgba(255,184,77,0.12); color: var(--amber); }
+    .tag.p4 { background: rgba(58,167,255,0.12); color: var(--brand2); }
+    .detail { margin-top: 14px; }
+    .detail h3 { font-size: 15px; color: var(--brand); margin: 14px 0 6px; }
+    .detail ul li b { color: var(--brand); }
+    .note { color: var(--muted); font-size: 13px; }
+    @media (max-width: 820px) {
+      .grid, .timeline { grid-template-columns: 1fr; }
+      .timeline::before { display: none; }
+      h1 { font-size: 26px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <div class="eyebrow"><span class="dot"></span> AGENT MIDDLEWARE · V2.0</div>
+      <h1>私域运营中台 <span class="grad">迭代方案</span></h1>
+      <p class="sub">平台内核 + 品牌分支 · 策略引擎自动生长 · 跨行业复用</p>
+      <div class="chips">
+        <span class="chip">当前 <b>v1.0 可运行</b></span>
+        <span class="chip">目标 <b>自生长策略神经元</b></span>
+        <span class="chip">测试 <b>21 项全链路</b></span>
+        <span class="chip">节奏 <b>P1-P4 四期</b></span>
+      </div>
+    </div>
+
+    <section class="section">
+      <div class="sec-head"><div class="no">01</div><h2>现状盘点</h2></div>
+      <div class="grid">
+        <div class="cell"><b>指令中心</b>12 维结构化指令 · 飞轮洞察建议 · 一键转指令</div>
+        <div class="cell"><b>需求飞轮</b>热点采集（行业相关性过滤）· 需求画像 · 货盘匹配 · 策略建议</div>
+        <div class="cell"><b>策略沉淀中心</b>结构化策略卡 · 从已验收指令沉淀 · 托管策略整月排期</div>
+        <div class="cell"><b>执行中心</b>活动/货盘/1v1/朋友圈/社群/短信/跟进 · 排期日历 · 发送策略 · 托管任务</div>
+        <div class="cell"><b>护栏</b>品牌违禁词 + 语境放行 · 命中自动拦截并告警</div>
+        <div class="cell"><b>知识库</b>多行业知识 · 品牌资料 · Second Brain 话术/卡项迁移</div>
+        <div class="cell"><b>多行业模板</b>美业 / 餐饮 / 零售 / 教育 / 宠物 / 大健康</div>
+        <div class="cell"><b>验收与权限</b>KPI 回填达成率对比 · admin/operator/viewer 三档权限</div>
+      </div>
+      <h3 style="color:var(--red);margin:16px 0 6px">主要差距</h3>
+      <ul class="gap-list">
+        <li>策略只沉淀、不生长：验收 KPI 未回流成策略节点效果权重。</li>
+        <li>资产未分层：模板 / 知识 / 护栏仍是“按行业各存一份”，缺平台级共享资产 + 品牌级实例。</li>
+        <li>无独立开发者后台：品牌管理、资产管理、计量对账、审计缺失。</li>
+        <li>无品牌分支机制：不能快速派生、同步、升级、解约客户品牌。</li>
+        <li>真实渠道与商业数据未接入：企微、容联云短信、巨量 / 小红书 / 抖音 / 蝉妈妈待联调。</li>
+        <li>飞书未接入：群聊 / 客服动作 / 运营效果无法实时回流。</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <div class="sec-head"><div class="no">02</div><h2>目标架构 · 自生长策略神经元</h2></div>
+      <div class="tree-wrap">
+        <svg viewBox="0 0 900 430" role="img" aria-label="自生长策略神经元" style="width:100%;height:auto">
+          <defs>
+            <linearGradient id="lgRoot" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#00e0b8"/><stop offset="1" stop-color="#3aa7ff"/>
+            </linearGradient>
+            <linearGradient id="lgBranch" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#0e2b3d"/><stop offset="1" stop-color="#123b52"/>
+            </linearGradient>
+            <filter id="glow"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          </defs>
+          <line x1="450" y1="40" x2="450" y2="115" stroke="#00e0b8" stroke-width="2" opacity="0.7"/>
+          <line x1="450" y1="115" x2="160" y2="260" stroke="#3aa7ff" stroke-width="1.5" opacity="0.5"/>
+          <line x1="450" y1="115" x2="450" y2="260" stroke="#3aa7ff" stroke-width="1.5" opacity="0.5"/>
+          <line x1="450" y1="115" x2="740" y2="260" stroke="#3aa7ff" stroke-width="1.5" opacity="0.5"/>
+          <path d="M150 300 C 120 350, 130 370, 165 392" stroke="#8b7cf6" stroke-width="1.5" fill="none" stroke-dasharray="6 5" opacity="0.8"/>
+          <path d="M440 300 C 430 350, 435 370, 450 392" stroke="#8b7cf6" stroke-width="1.5" fill="none" stroke-dasharray="6 5" opacity="0.8"/>
+          <path d="M730 300 C 760 350, 750 370, 715 392" stroke="#8b7cf6" stroke-width="1.5" fill="none" stroke-dasharray="6 5" opacity="0.8"/>
+          <g filter="url(#glow)">
+            <rect x="170" y="20" width="560" height="95" rx="14" fill="url(#lgRoot)" opacity="0.92"/>
+          </g>
+          <text x="450" y="58" text-anchor="middle" fill="#04121c" font-size="18" font-weight="700">平台内核 · 神经元</text>
+          <text x="450" y="82" text-anchor="middle" fill="#062a2b" font-size="11">策略引擎 · 行业策略库 · 知识库 · 护栏 · 模型网关 · 渠道适配器 · 计量计费 · 版本 · 飞书信号</text>
+          <g>
+            <rect x="70" y="262" width="180" height="76" rx="12" fill="url(#lgBranch)" stroke="#3aa7ff" stroke-width="1.2"/>
+            <text x="160" y="292" text-anchor="middle" fill="#dff4ff" font-size="14" font-weight="700">品牌 A 分支</text>
+            <text x="160" y="314" text-anchor="middle" fill="#7fa6bd" font-size="10">行业实例 + 品牌知识 + 工作台</text>
+          </g>
+          <g>
+            <rect x="360" y="262" width="180" height="76" rx="12" fill="url(#lgBranch)" stroke="#3aa7ff" stroke-width="1.2"/>
+            <text x="450" y="292" text-anchor="middle" fill="#dff4ff" font-size="14" font-weight="700">品牌 B 分支</text>
+            <text x="450" y="314" text-anchor="middle" fill="#7fa6bd" font-size="10">行业实例 + 品牌知识 + 工作台</text>
+          </g>
+          <g>
+            <rect x="650" y="262" width="180" height="76" rx="12" fill="url(#lgBranch)" stroke="#3aa7ff" stroke-width="1.2"/>
+            <text x="740" y="292" text-anchor="middle" fill="#dff4ff" font-size="14" font-weight="700">品牌 C 分支</text>
+            <text x="740" y="314" text-anchor="middle" fill="#7fa6bd" font-size="10">行业实例 + 品牌知识 + 工作台</text>
+          </g>
+          <g>
+            <rect x="330" y="392" width="240" height="28" rx="8" fill="rgba(139,124,246,0.12)" stroke="#8b7cf6" stroke-width="1"/>
+            <text x="450" y="411" text-anchor="middle" fill="#8b7cf6" font-size="11">执行结果 / 验收 KPI / 飞书效果 回流</text>
+          </g>
+        </svg>
+      </div>
+      <div class="grid" style="margin-top:12px">
+        <div class="cell"><b>平台内核（神经元）</b>策略引擎（节点 + 效果权重 + 场景关联）、行业策略库、平台知识库与护栏、模型网关、渠道适配器、计量计费、开发者后台、版本管理、飞书实时信号通道</div>
+        <div class="cell"><b>品牌实例（分支）</b>从平台内核（神经元）派生：行业 + 模板 + 品牌知识 + 违禁词 + 渠道 + 权限；策略/模板/知识默认平台级共享，品牌可私有覆盖；业务数据完全隔离；现有 Tenant 直接升级为分支实例</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="sec-head"><div class="no">03</div><h2>迭代路线图</h2></div>
+      <div class="timeline">
+        <div class="phase"><div class="node"></div><span class="tag p1">P1 · 6-8 周</span><h3>平台内核</h3><div class="weeks">策略引擎 · 资产分层 · 开发者后台 · 飞书回流</div></div>
+        <div class="phase"><div class="node"></div><span class="tag p2">P2 · 6-8 周</span><h3>策略生长</h3><div class="weeks">品牌实例化 · 跨行业复用 · 效果图谱</div></div>
+        <div class="phase"><div class="node"></div><span class="tag p3">P3 · 6-8 周</span><h3>开放生态</h3><div class="weeks">短信 / 企微 · 商业数据 · 开放 API</div></div>
+        <div class="phase"><div class="node"></div><span class="tag p4">P4 · 6-8 周</span><h3>规模化</h3><div class="weeks">多租户 · 对账 · 驾驶舱 · 运维</div></div>
+      </div>
+      <div class="detail">
+        <h3>P1 平台内核与开发者后台</h3>
+        <ul>
+          <li><b>P1-1 策略引擎 v1（效果回流）</b>：指令沉淀策略卡时建立关联；验收 KPI 回写 runs / wins / score；飞轮建议按效果分排序。</li>
+          <li><b>P1-2 平台级资产模型</b>：行业模板、知识库、护栏升级为“平台默认资产 + 品牌覆盖实例”，覆盖互不污染。</li>
+          <li><b>P1-3 开发者管理后台</b>：仅内部使用；品牌派生 / 启停 / 解约 / 版本、资产管理、计量对账、操作审计。</li>
+          <li><b>P1-4 飞书双向接入</b>：读取群聊 / 客服消息 / 动作，并从系统向飞书发消息、执行指令；客服动作与运营效果转成效果事件，与验收 KPI 一起更新策略权重。</li>
+        </ul>
+        <h3>P2 品牌实例化与策略生长</h3>
+        <ul>
+          <li>现有 Tenant 直接升级为品牌分支实例；一键派生新分支，分支跟随平台版本升级，解约只停分支。</li>
+          <li>策略节点标注行业 / 场景 / 人群 / 渠道，按相似度跨行业复用；AI 自动组合已验证打法生成候选策略，人工审核通过后沉淀。</li>
+          <li>效果图谱：策略节点 + 关联边（相似场景 / 上下游 / 替代关系）可视化。</li>
+        </ul>
+        <h3>P3 渠道与开放生态</h3>
+        <ul>
+          <li>容联云短信真实发送；企业微信真实发送（会话存档可选）。</li>
+          <li>商业数据源接入：巨量、小红书、抖音、蝉妈妈（按客户签约增购）。</li>
+          <li>开放 API 与外部客服桥接：第三方平台可推送信号、创建指令、查询执行结果。</li>
+        </ul>
+        <h3>P4 规模化与商业化</h3>
+        <ul>
+          <li>多租户隔离强化、数据权限、安全合规。</li>
+          <li>按客户对账单与成本分摊（LLM / 短信 / 渠道）。</li>
+          <li>平台级经营驾驶舱；监控、告警、备份、灾备、灰度发布。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="sec-head"><div class="no">04</div><h2>里程碑 · 可演示结果</h2></div>
+      <table>
+        <thead><tr><th>阶段</th><th>可演示结果</th></tr></thead>
+        <tbody>
+          <tr><td><span class="tag p1">P1-1</span></td><td>验收一个指令后，对应策略卡效果分上升，飞轮建议排序变化</td></tr>
+          <tr><td><span class="tag p1">P1-2</span></td><td>两个不同行业品牌共享平台策略库，个性化覆盖不冲突</td></tr>
+          <tr><td><span class="tag p1">P1-3</span></td><td>开发者后台派生新品牌，几分钟长出运营工作台</td></tr>
+          <tr><td><span class="tag p1">P1-4</span></td><td>飞书客服动作 / 效果实时回流，策略卡效果记录可见</td></tr>
+          <tr><td><span class="tag p2">P2-1</span></td><td>平台升级一次，全部品牌分支同步获得新能力</td></tr>
+          <tr><td><span class="tag p2">P2-2</span></td><td>美业验证的打法一键复用到餐饮品牌</td></tr>
+          <tr><td><span class="tag p2">P2-3</span></td><td>策略关系图谱展示复用与关联</td></tr>
+          <tr><td><span class="tag p3">P3</span></td><td>短信 / 企微真实发送，巨量 / 小红书数据进入飞轮</td></tr>
+          <tr><td><span class="tag p4">P4</span></td><td>多品牌并行、按月出账、平台驾驶舱</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <div class="sec-head"><div class="no">05</div><h2>技术要点 · 风险 · 节奏</h2></div>
+      <div class="grid">
+        <div class="cell"><b>技术实现要点</b>
+          <ul>
+            <li>平台级资产 / 策略节点模型；Tenant 直接升级为品牌分支实例；策略卡增加效果统计。</li>
+            <li>资产规则：策略 / 模板 / 知识默认平台级共享，品牌私有覆盖；业务数据按品牌完全隔离。</li>
+            <li>回流链路：验收 KPI + 飞书效果事件 → 策略节点权重 → 飞轮建议排序。</li>
+            <li>新增开发者后台路由；运营工作台按品牌实例渲染。</li>
+            <li>平台资产带版本，品牌实例记录应用版本；每切片补自动化测试。</li>
+          </ul>
+        </div>
+        <div class="cell"><b>依赖与风险</b>
+          <ul>
+            <li>渠道 / 数据源权限：巨量、小红书、抖音、蝉妈妈需服务商资质与报价。</li>
+            <li>飞书权限：自建应用需开通群聊 / 消息 / 审批权限。</li>
+            <li>模型成本随客户增长，靠预算上限 + 按客户计量控制。</li>
+            <li>合规：品牌违禁词、行业监管、客户数据隐私；保持向后兼容。</li>
+          </ul>
+        </div>
+      </div>
+      <h3 style="color:var(--brand);margin:14px 0 6px">执行节奏</h3>
+      <ul>
+        <li>先做 <b>P1-1</b> 策略效果回流，让“神经元靠分支生长”闭环先跑起来。</li>
+        <li>再做 <b>P1-2 / P1-3 / P1-4</b>，P1 完成后接 <b>P2</b> 品牌实例化，形成完整自生长策略神经元雏形。</li>
+        <li>P3 / P4 按渠道授权与商业化节奏推进。</li>
+      </ul>
+    </section>
+  </div>
+</body>
+</html>

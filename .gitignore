@@ -1,0 +1,43 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+backend/.env
+backend/.env.local
+*.key
+*.pem
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+
+# Node
+node_modules/
+web/dist/
+web/node_modules/
+*.tsbuildinfo
+
+# Brand data (client confidential)
+怡宝/
+美丽田园/
+
+# Data files
+*.pdf
+*.xlsx
+*.xls
+*.docx
+*.pptx
+
+# OS
+.DS_Store
+Thumbs.db
