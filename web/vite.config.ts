@@ -3,6 +3,7 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [react()],
+  base: "/pdp-platform/",
   server: {
     port: 5173,
     proxy: {
@@ -10,4 +11,3 @@ export default defineConfig({
     },
   },
 });
-
