@@ -11,7 +11,7 @@ from app.models import KnowledgeChunk, KnowledgeDoc
 EMBED_DIM = 64
 DEFAULT_MAX_CHARS = 600
 OVERLAP_CHARS = 80
-SUPPORTED_TEXT_TYPES = {"txt", "md", "markdown", "csv", "json"}
+SUPPORTED_TEXT_TYPES = {"txt", "md", "markdown", "csv", "json", "pdf", "docx", "xlsx", "xls"}
 
 
 def _tokenize(text: str) -> list[str]:
@@ -54,10 +54,66 @@ def chunk_text(text: str, max_chars: int = DEFAULT_MAX_CHARS, overlap: int = OVE
     return chunks
 
 
+def _parse_pdf(data: bytes) -> str:
+    """Extract text from PDF using pypdf."""
+    import io
+    from pypdf import PdfReader
+    reader = PdfReader(io.BytesIO(data))
+    parts: list[str] = []
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        if text.strip():
+            parts.append(text.strip())
+    return "\n\n".join(parts)
+
+
+def _parse_docx(data: bytes) -> str:
+    """Extract text from Word .docx using python-docx."""
+    import io
+    from docx import Document
+    doc = Document(io.BytesIO(data))
+    parts: list[str] = []
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if text:
+            parts.append(text)
+    # Also extract text from tables
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if cells:
+                parts.append(" | ".join(cells))
+    return "\n".join(parts)
+
+
+def _parse_xlsx(data: bytes) -> str:
+    """Extract data from Excel .xlsx/.xls using openpyxl."""
+    import io
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    parts: list[str] = []
+    for ws in wb.worksheets:
+        parts.append(f"[Sheet: {ws.title}]")
+        for row in ws.iter_rows(values_only=True):
+            cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
+            if cells:
+                parts.append("\t".join(cells))
+    wb.close()
+    return "\n".join(parts)
+
+
 def parse_text_file(name: str, data: bytes) -> str:
     suffix = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if suffix not in SUPPORTED_TEXT_TYPES:
         raise ValueError(f"暂不支持的文件类型: .{suffix}")
+    if suffix in {"txt", "md", "markdown", "csv", "json"}:
+        return data.decode("utf-8", errors="replace")
+    if suffix == "pdf":
+        return _parse_pdf(data)
+    if suffix == "docx":
+        return _parse_docx(data)
+    if suffix in {"xlsx", "xls"}:
+        return _parse_xlsx(data)
     return data.decode("utf-8", errors="replace")
 
 

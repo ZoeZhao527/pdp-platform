@@ -61,7 +61,7 @@ export default function Knowledge() {
         <div className="upload-bar">
           <input
             type="file"
-            accept=".txt,.md,.csv,.json"
+            accept=".txt,.md,.csv,.json,.pdf,.docx,.xlsx,.xls"
             className="file-input"
             onChange={(event) => upload(event.target.files?.[0])}
           />
