@@ -5,6 +5,7 @@ import type {
   ApiLogRow,
   AuditLogRow,
   AuthUser,
+  AssetPackage,
   BrandRow,
   BrandDetail,
  BrandUserRow,
@@ -258,15 +259,28 @@ export const api = {
  llmModels: () => request<LLMModel[]>("/admin/llm/models"),
  llmUsage: () => request<LLMUsage>("/admin/llm/usage"),
   llmPresets: () => request<Record<string, string>[]>("/admin/llm/presets"),
-  llmCreateModel: (data: {
-    name: string; provider: string; model: string; base_url: string;
-    api_key?: string; priority?: number; complexity?: string;
-    cost_per_million?: number; enabled?: boolean;
-  }) =>
-    request<{ id: string }>("/admin/llm/models", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+ llmCreateModel: (data: {
+   name: string; provider: string; model: string; base_url: string;
+   api_key?: string; priority?: number; complexity?: string;
+   cost_per_million?: number; enabled?: boolean;
+ }) =>
+   request<{ id: string }>("/admin/llm/models", {
+     method: "POST",
+     body: JSON.stringify(data),
+   }),
+ llmUpdateModel: (modelId: string, data: {
+   name: string; provider: string; model: string; base_url: string;
+   api_key?: string; priority?: number; complexity?: string;
+   cost_per_million?: number; enabled?: boolean;
+ }) =>
+   request<{ id: string; updated: boolean }>(`/admin/llm/models/${modelId}`, {
+     method: "PUT",
+     body: JSON.stringify(data),
+   }),
+ llmDeleteModel: (modelId: string) =>
+   request<{ id: string; deleted: boolean }>(`/admin/llm/models/${modelId}`, {
+     method: "DELETE",
+   }),
   customers: () => request<CustomerProfile[]>("/customers"),
   customerProfile: (id: string) => request<CustomerProfile>(`/customers/${id}/profile`),
   marketOverview: () => request<MarketOverview>("/market/overview"),
@@ -434,13 +448,41 @@ export const api = {
     request<{ id: string; status: string; tasks: number }>(`/platform/instructions/${id}/approve`, {
       method: "POST",
     }),
-  rejectInstruction: (id: string) =>
-    request<{ id: string; status: string }>(`/platform/instructions/${id}/reject`, { method: "POST" }),
-  acceptInstruction: (id: string, payload?: { kpi_results?: Record<string, string | number> }) =>
-    request<{ id: string; status: string; report_id: string }>(`/platform/instructions/${id}/accept`, {
+ rejectInstruction: (id: string) =>
+   request<{ id: string; status: string }>(`/platform/instructions/${id}/reject`, { method: "POST" }),
+  reviseInstruction: (id: string, message: string) =>
+    request<{
+      instruction_id: string;
+      status: string;
+      asset: AssetPackage;
+      revision_note: string;
+    }>(`/platform/instructions/${id}/revise`, {
       method: "POST",
-      body: payload ? JSON.stringify(payload) : undefined,
+      body: JSON.stringify({ message }),
     }),
+  listRunlogs: (params?: { module?: string; instruction_id?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.module) qs.set("module", params.module);
+    if (params?.instruction_id) qs.set("instruction_id", params.instruction_id);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    return request<
+      Array<{
+        id: string;
+        instruction_id: string | null;
+        module: string;
+        event: string;
+        detail: string | null;
+        operator: string;
+        extra: Record<string, unknown> | null;
+        created_at: string | null;
+      }>
+    >(`/platform/runlogs${qs.toString() ? `?${qs}` : ""}`);
+  },
+ acceptInstruction: (id: string, payload?: { kpi_results?: Record<string, string | number> }) =>
+   request<{ id: string; status: string; report_id: string }>(`/platform/instructions/${id}/accept`, {
+     method: "POST",
+     body: payload ? JSON.stringify(payload) : undefined,
+   }),
   exportInstruction: async (id: string) => {
     const token = localStorage.getItem("pdp_token");
     const headers: Record<string, string> = {};
@@ -518,6 +560,11 @@ export const api = {
   dispatchExecutionTodo: (id: string) =>
     request<{ id: string; status: string; message_id?: string; guardrail?: { matched_rule: string; note: string } }>(
       `/platform/execution/todos/${id}/dispatch`,
+      { method: "POST" },
+    ),
+  sendTodoToFeishu: (id: string) =>
+    request<{ ok: boolean; task_id: string; task_title: string; status: string; send_result: any; mock?: boolean }>(
+      `/platform/execution/todos/${id}/send-feishu`,
       { method: "POST" },
     ),
   rebuildInstructionPlan: (id: string) =>

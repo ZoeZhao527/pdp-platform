@@ -18,7 +18,7 @@ from app.db import SessionLocal  # noqa: E402
 from app.knowledge.service import KnowledgeService  # noqa: E402
 from app.models import KnowledgeDoc  # noqa: E402
 
-ROOT = Path("/Users/zhaoxinyuan/Desktop/私域运营中台/怡宝/怡宝")
+ROOT = Path("/Users/zhaoxinyuan/Desktop/消费者运营中台/怡宝/怡宝")
 TENANT_ID = "4510b2c8-9761-4b94-ae3e-77b2838906c9"
 INDUSTRY_ID = "2a6d6e26-4c2b-43f3-8337-52e05142a726"  # 零售
 MAX_ROWS_PER_PART = 2000

@@ -26,7 +26,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
     <div className="login-page">
       <div className="login-card">
         <div className="brand-mark">A</div>
-        <h1>私域运营中台</h1>
+        <h1>消费者运营中台</h1>
         <p>请登录后进入系统</p>
         <input
           value={username}

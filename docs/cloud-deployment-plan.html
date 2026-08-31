@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>消费者运营中台 - 云端部署方案</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #0f1117; color: #e0e0e0; line-height: 1.7;
+  }
+  .container { max-width: 960px; margin: 0 auto; padding: 48px 24px 80px; }
+
+  h1 { font-size: 28px; color: #fff; margin-bottom: 4px; }
+  .subtitle { color: #8b8d97; font-size: 14px; margin-bottom: 40px; }
+
+  h2 {
+    font-size: 20px; color: #6ea8fe; margin-top: 48px; margin-bottom: 16px;
+    padding-bottom: 8px; border-bottom: 1px solid #2a2d36;
+  }
+  h3 { font-size: 16px; color: #c0c5cf; margin-top: 28px; margin-bottom: 10px; }
+
+  p { margin-bottom: 12px; color: #b0b3bc; }
+
+  .phase {
+    background: #181a22; border: 1px solid #2a2d36; border-radius: 8px;
+    padding: 24px; margin: 16px 0;
+  }
+  .phase-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .phase-tag {
+    display: inline-block; padding: 2px 12px; border-radius: 4px;
+    font-size: 13px; font-weight: 600; white-space: nowrap;
+  }
+  .tag-now { background: #1e3a1e; color: #4ade80; }
+  .tag-mid { background: #1e2a3a; color: #60a5fa; }
+  .tag-future { background: #2a1e3a; color: #c084fc; }
+  .phase-title { font-size: 17px; color: #e0e0e0; font-weight: 600; }
+
+  .server-spec {
+    background: #1a1c24; border-radius: 6px; padding: 16px;
+    margin: 12px 0; font-family: "SF Mono", "Fira Code", monospace;
+    font-size: 13px; line-height: 1.8;
+  }
+  .server-spec .label { color: #8b8d97; }
+  .server-spec .value { color: #6ea8fe; }
+
+  table {
+    width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;
+  }
+  th { text-align: left; padding: 10px 12px; background: #1a1c24; color: #8b8d97; font-weight: 600; border-bottom: 1px solid #2a2d36; }
+  td { padding: 10px 12px; border-bottom: 1px solid #1e2028; color: #b0b3bc; }
+  td:first-child { color: #e0e0e0; }
+
+  .arch-box {
+    background: #14161e; border: 1px solid #2a2d36; border-radius: 8px;
+    padding: 24px; margin: 16px 0; font-family: "SF Mono", "Fira Code", monospace;
+    font-size: 13px; line-height: 1.6; overflow-x: auto; white-space: pre; color: #b0b3bc;
+  }
+  .arch-box .hl { color: #6ea8fe; }
+  .arch-box .hl2 { color: #4ade80; }
+  .arch-box .hl3 { color: #c084fc; }
+  .arch-box .dim { color: #6b6d77; }
+
+  .callout {
+    background: #1a1e2a; border-left: 3px solid #6ea8fe; padding: 16px 20px;
+    margin: 16px 0; border-radius: 0 6px 6px 0;
+  }
+  .callout-green { border-left-color: #4ade80; background: #1a2a1e; }
+
+  .footer {
+    margin-top: 60px; padding-top: 20px; border-top: 1px solid #2a2d36;
+    color: #6b6d77; font-size: 13px;
+  }
+
+  .checklist { list-style: none; padding-left: 0; }
+  .checklist li { padding: 6px 0; padding-left: 28px; position: relative; color: #b0b3bc; }
+  .checklist li::before { content: "\2610"; position: absolute; left: 0; color: #6ea8fe; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1>消费者运营中台 - 云端部署方案</h1>
+  <p class="subtitle">容器化架构 / 分阶段扩容 / 可复制可回滚</p>
+
+  <div class="callout callout-green">
+    <p><strong>核心原则：</strong>所有服务 Docker 容器化，docker-compose.yml 一键编排。换服务器只需一条命令 <code>docker compose up -d</code> 启动全套环境。数据与服务分离，后期按角色拆机扩容，不影响已有架构。</p>
+  </div>
+
+  <!-- Architecture -->
+  <h2>一、整体架构</h2>
+
+  <div class="arch-box">                           <span class="dim">用户 / 飞书 / 企业微信</span>
+                                          │
+                                    ┌─────┴─────┐
+                                    │  <span class="hl">Nginx</span>   │  443/80, SSL, 反向代理
+                                    │  前端静态  │  React dist 文件
+                                    └─────┬─────┘
+                                          │
+                          ┌───────────────┼───────────────┐
+                          │                               │
+                   ┌──────┴──────┐               ┌────────┴────────┐
+                   │  <span class="hl">FastAPI</span>   │               │  <span class="hl2">PostgreSQL</span>      │
+                   │  gunicorn   │──────────────►│  + <span class="hl2">pgvector</span>      │
+                   │  多 worker  │               │  数据库+向量检索  │
+                   └──────┬──────┘               └─────────────────┘
+                          │
+            ┌─────────────┼─────────────┐
+            │             │             │
+     ┌──────┴──────┐ ┌───┴────┐ ┌──────┴───────┐
+     │  <span class="hl3">Redis</span>     │ │ <span class="hl3">Embed</span> │ │  云端 LLM API  │
+     │ 缓存+任务队列│ │ 服务   │ │ DeepSeek/GLM │
+     └─────────────┘ └────────┘ └──────────────┘
+
+                              ┌─────────────────┐
+                              │  腾讯云 <span class="hl">COS</span>    │  品牌素材/知识库文件
+                              │  对象存储        │  无限扩容
+                              └─────────────────┘</div>
+
+  <h3>组件职责</h3>
+  <table>
+    <tr><th>组件</th><th>职责</th><th>技术选型</th></tr>
+    <tr><td>Nginx</td><td>SSL 证书、反向代理、前端静态文件托管</td><td>Nginx 1.24</td></tr>
+    <tr><td>FastAPI 后端</td><td>API 服务、策略生成、飞书下发、知识库检索</td><td>Python 3.12 + Gunicorn (4 worker)</td></tr>
+    <tr><td>PostgreSQL + pgvector</td><td>业务数据 + 向量索引一体化，无需单独向量数据库</td><td>PostgreSQL 16 + pgvector 扩展</td></tr>
+    <tr><td>Redis</td><td>缓存热点数据、异步任务队列（策略生成耗时数分钟，不阻塞 API）</td><td>Redis 7</td></tr>
+    <tr><td>Embedding 服务</td><td>文本向量化，知识库索引 + 检索时调用</td><td>nomic-embed-text (Ollama, CPU)</td></tr>
+    <tr><td>LLM API</td><td>策略/话术/活动内容生成，远程调用不占服务器算力</td><td>DeepSeek V4 Pro / GLM (容联代理)</td></tr>
+    <tr><td>COS 对象存储</td><td>品牌上传素材、知识库 PDF、导出的 Excel 资产包</td><td>腾讯云 COS</td></tr>
+  </table>
+
+  <!-- Why Docker -->
+  <h2>二、为什么用 Docker 容器化</h2>
+  <table>
+    <tr><th>维度</th><th>容器化方案</th><th>传统裸装方案</th></tr>
+    <tr><td>可复制性</td><td>一份 docker-compose.yml + .env，任何服务器一键启动</td><td>每台服务器手动装环境，容易不一致</td></tr>
+    <tr><td>扩容</td><td>任意容器拆到新机器，改网络配置即可</td><td>重新部署整套环境</td></tr>
+    <tr><td>稳定性</td><td>容器崩溃自动重启，互不影响</td><td>一个服务挂可能拖垮全机</td></tr>
+    <tr><td>回滚</td><td>切上一个镜像版本，10 秒回滚</td><td>重新装包，手动排查</td></tr>
+    <tr><td>迁移</td><td>docker save → scp → docker load，整环境搬迁</td><td>从头搭建</td></tr>
+  </table>
+
+  <!-- Phase 1 -->
+  <h2>三、分阶段扩容路线</h2>
+
+  <div class="phase">
+    <div class="phase-header">
+      <span class="phase-tag tag-now">阶段一</span>
+      <span class="phase-title">单机部署（3-5 个客户，现在启动）</span>
+    </div>
+    <p>一台服务器跑全套容器，最经济、最简单。足以支撑 3-5 个品牌客户同时使用，包括知识库检索、策略生成、飞书下发。</p>
+
+    <div class="server-spec">
+<span class="label">腾讯云 CVM</span>
+<span class="label">CPU：</span><span class="value">4 核</span>
+<span class="label">内存：</span><span class="value">16 GB</span>
+<span class="label">磁盘：</span><span class="value">100 GB SSD</span>
+<span class="label">带宽：</span><span class="value">5 Mbps 起</span>
+<span class="label">系统：</span><span class="value">Ubuntu 22.04 LTS</span>
+<span class="label">GPU：</span><span class="value">不需要</span>
+
+<span class="label">容器内存分配：</span>
+  nginx          ~200 MB
+  fastapi (4w)   ~2 GB
+  postgresql     ~4 GB （含 pgvector 向量索引）
+  redis          ~512 MB
+  embedding      ~2 GB （nomic-embed-text, CPU 推理）
+  signal-crawler ~1 GB （Playwright 无头浏览器，定时抓取公开数据源）
+  ─────────────────────────
+  合计           ~10 GB，16 GB 留足余量
+    </div>
+
+    <p><strong>不需要 GPU 的原因：</strong>LLM 生成走云端 API（DeepSeek / GLM），不占服务器算力；Embedding 用 nomic-embed-text（136MB 小模型），CPU 推理一次几十毫秒；向量检索在 PostgreSQL 内完成。</p>
+  </div>
+
+  <!-- Phase 2 -->
+  <div class="phase">
+    <div class="phase-header">
+      <span class="phase-tag tag-mid">阶段二</span>
+      <span class="phase-title">数据库分离（10-20 个客户）</span>
+    </div>
+    <p>数据量增大后，把 PostgreSQL 和 Embedding 服务拆到独立机器，应用层保持无状态，可随时加机器做负载均衡。</p>
+
+    <div class="server-spec">
+<span class="label">服务器 A（应用层）</span>  4 核 / 8G / 50G SSD
+  nginx + fastapi + redis
+  无状态，可随时复制加机器
+
+<span class="label">服务器 B（数据层）</span>  4 核 / 16G / 200G SSD
+  postgresql + pgvector（主库）
+  embedding 服务
+  数据有状态，需定期备份
+    </div>
+
+    <p><strong>扩容操作：</strong>应用层加一台同配置 CVM，挂到腾讯云 CLB 负载均衡后面，零代码改动。</p>
+  </div>
+
+  <!-- Phase 3 -->
+  <div class="phase">
+    <div class="phase-header">
+      <span class="phase-tag tag-future">阶段三</span>
+      <span class="phase-title">横向扩展（50+ 个客户）</span>
+    </div>
+    <p>全链路水平扩展，每个角色都可独立扩容，支撑大规模客户量。</p>
+
+    <div class="server-spec">
+<span class="label">负载均衡</span>
+  腾讯云 CLB
+    ├── 应用服务器 A (nginx + fastapi)
+    ├── 应用服务器 B (nginx + fastapi)
+    └── 应用服务器 C (nginx + fastapi)
+
+<span class="label">数据库主从</span>
+  PostgreSQL 主库（写入）
+  PostgreSQL 只读副本（查询，含向量检索）
+
+<span class="label">缓存与队列</span>
+  Redis 集群（缓存 + 异步任务）
+
+<span class="label">Embedding 服务</span>
+  独立实例 ×2 副本（可继续加）
+
+<span class="label">信号采集服务</span>
+  signal-crawler 独立实例 ×2（多品牌并发抓取）
+
+<span class="label">文件存储</span>
+  COS + CDN 加速
+
+<span class="label">可选升级</span>
+  向量量超百万级时：pgvector → Milvus 专业向量数据库
+  客户量上百时：Docker Compose → Kubernetes 编排
+    </div>
+  </div>
+
+  <!-- Key Decisions -->
+  <h2>四、关键选型说明</h2>
+  <table>
+    <tr><th>选型</th><th>选择</th><th>原因</th><th>后续替代</th></tr>
+    <tr><td>数据库</td><td>PostgreSQL + pgvector</td><td>业务数据和向量索引一体，省一个中间件；事务支持完善；成熟稳定</td><td>向量超百万 → Milvus</td></tr>
+    <tr><td>缓存/队列</td><td>Redis</td><td>策略生成耗时数分钟，用异步队列处理不阻塞 API；缓存热点知识库检索结果</td><td>—</td></tr>
+    <tr><td>编排</td><td>Docker Compose</td><td>轻量、可复制、一条命令启动；前期不需要 K8s 的复杂度</td><td>客户上百 → K8s</td></tr>
+    <tr><td>文件存储</td><td>腾讯云 COS</td><td>品牌素材多时本地磁盘撑不住；COS 无限扩容 + CDN 加速</td><td>—</td></tr>
+    <tr><td>Embedding</td><td>nomic-embed-text (CPU)</td><td>136MB 轻量模型，CPU 推理够用，独立容器方便后期拆机</td><td>量大 → 云端 Embedding API</td></tr>
+    <tr><td>LLM</td><td>DeepSeek / GLM API</td><td>远程调用，不占服务器算力，按 token 付费</td><td>—</td></tr>
+    <tr><td>进程管理</td><td>Docker restart policy</td><td>容器崩溃自动重启，无需 supervisor</td><td>—</td></tr>
+  </table>
+
+  <!-- Data Migration -->
+  <h2>五、数据迁移方案</h2>
+  <p>本地 SQLite 中的数据需迁移到云端 PostgreSQL，包括：</p>
+  <table>
+    <tr><th>数据类型</th><th>当前位置</th><th>迁移方式</th></tr>
+    <tr><td>品牌知识库 + 向量索引</td><td>本地 pdp.db (SQLite)</td><td>导出 → pgvector 导入 → 重算向量</td></tr>
+    <tr><td>行业配置 / 模板</td><td>本地 pdp.db</td><td>SQL 导出导入</td></tr>
+    <tr><td>策略沉淀</td><td>本地 pdp.db</td><td>SQL 导出导入</td></tr>
+    <tr><td>飞书配置</td><td>本地 pdp.db</td><td>SQL 导出导入</td></tr>
+    <tr><td>品牌素材文件</td><td>本地磁盘</td><td>上传到 COS 或 scp 到服务器</td></tr>
+    <tr><td>前端代码</td><td>本地 dist/</td><td>打包进 Docker 镜像或挂载 volume</td></tr>
+  </table>
+
+  <!-- Signal Collection -->
+  <h2>六、信号中心数据与采集</h2>
+
+  <p>需求飞轮的信号中心会持续采集市场信号，这些数据与业务数据共同存储在 PostgreSQL 中，无需独立数据库。</p>
+
+  <h3>数据量评估</h3>
+  <table>
+    <tr><th>数据表</th><th>当前数据量</th><th>含义</th><th>年增长预估（5 客户）</th></tr>
+    <tr><td>demand_signals</td><td>211 行 / ~40 KB</td><td>原始市场信号文本</td><td>~50 MB</td></tr>
+    <tr><td>demand_profiles</td><td>1,464 行 / ~400 KB</td><td>结构化需求画像</td><td>~200 MB</td></tr>
+    <tr><td>demand_graph</td><td>30 行 / ~9 KB</td><td>需求关联关系</td><td>~10 MB</td></tr>
+    <tr><td>hot_videos</td><td>10 行 / ~2 KB</td><td>热点视频榜单</td><td>~50 MB</td></tr>
+    <tr><td>knowledge_chunks（对比）</td><td>10,003 行 / ~105 MB</td><td>知识库文本+向量</td><td>~500 MB</td></tr>
+    <tr style="border-top: 2px solid #2a2d36;"><td><strong>信号数据合计</strong></td><td>~450 KB</td><td>—</td><td><strong>~310 MB/年</strong></td></tr>
+  </table>
+
+  <div class="callout callout-green">
+    <p><strong>结论：</strong>信号数据量远小于知识库（105 MB vs 0.45 MB），存储层面 100G SSD 绰绰有余。真正的资源消耗在采集过程本身。</p>
+  </div>
+
+  <h3>采集方式与资源消耗</h3>
+  <table>
+    <tr><th>采集方式</th><th>适用场景</th><th>资源消耗</th><th>是否需要额外机器</th></tr>
+    <tr><td>第三方数据 API</td><td>蝉妈妈、巨量引擎、小红书开放平台</td><td>极低，仅 HTTP 请求 + 存储</td><td>否</td></tr>
+    <tr><td>无头浏览器爬取</td><td>公开页面抓取（Playwright）</td><td>~1G 内存，CPU 间歇占用</td><td>否（阶段一），阶段三拆独立容器</td></tr>
+    <tr><td>飞书回传</td><td>运营动作、客服沟通记录</td><td>零（Webhook 被动接收）</td><td>否</td></tr>
+    <tr><td>手动录入</td><td>运营补充信号</td><td>零</td><td>否</td></tr>
+  </table>
+
+  <div class="callout">
+    <p><strong>架构考量：</strong>signal-crawler 作为独立 Docker 容器运行，使用 Playwright 定时抓取公开数据源。独立容器的好处是：爬虫崩溃不影响主 API 服务；后期可单独拆到独立服务器；可独立扩容（如多品牌并发抓取）。阶段一单机跑，16G 内存够用；阶段三按需拆机。</p>
+  </div>
+
+  <h3>信号数据去向</h3>
+  <div class="arch-box"><span class="dim">公开数据源（小红书/抖音/蝉妈妈）</span>
+                          │
+                   ┌───────┴───────┐
+                   │ signal-crawler │  Playwright 定时抓取
+                   │ (独立容器)    │  ~1G 内存
+                   └───────┬───────┘
+                           │
+                   ┌───────┴───────┐
+                   │  PostgreSQL   │  存入 demand_signals 表
+                   │ + pgvector    │  向量化后入 demand_profiles
+                   └───────┬───────┘
+                           │
+                   ┌───────┴───────┐
+                   │  FastAPI 后端  │  检索信号 → 生成策略参考
+                   └───────────────┘
+
+  <span class="dim">飞书群消息回传 → Webhook → demand_signals（source_type=message）</span></div>
+
+  <!-- Cost -->
+  <h2>七、费用参考（阶段一，月度）</h2>
+  <table>
+    <tr><th>项目</th><th>规格</th><th>月费用（参考）</th></tr>
+    <tr><td>腾讯云 CVM</td><td>4核 16G / 100G SSD</td><td>200-300 元</td></tr>
+    <tr><td>公网带宽</td><td>5 Mbps</td><td>含在 CVM 内或 ~30 元</td></tr>
+    <tr><td>COS 对象存储</td><td>按用量，前期 10G 内</td><td>~5 元</td></tr>
+    <tr><td>域名 SSL</td><td>免费证书</td><td>0 元</td></tr>
+    <tr><td>LLM API (DeepSeek)</td><td>按 token 付费</td><td>客户承担</td></tr>
+    <tr><td>LLM API (GLM)</td><td>容联代理</td><td>内部资源</td></tr>
+    <tr><td>Embedding</td><td>本地 CPU，无额外费用</td><td>0 元</td></tr>
+    <tr style="border-top: 2px solid #2a2d36;"><td><strong>合计（服务器+存储）</strong></td><td>—</td><td><strong>约 210-340 元/月</strong></td></tr>
+  </table>
+
+  <!-- Deployment Steps -->
+  <h2>八、部署步骤</h2>
+  <div class="checklist">
+    <li>开通腾讯云 CVM（4核 16G / 100G SSD / Ubuntu 22.04）</li>
+    <li>配置安全组：开放 80、443 端口</li>
+    <li>安装 Docker + Docker Compose</li>
+    <li>准备 docker-compose.yml（含 nginx / fastapi / postgresql / redis / embedding 五个容器）</li>
+    <li>准备 .env 配置文件（数据库密码、LLM API Key、飞书配置等）</li>
+    <li>构建后端 Docker 镜像（含全部 Python 依赖）</li>
+    <li>初始化 PostgreSQL + pgvector 扩展</li>
+    <li>执行数据迁移脚本（SQLite → PostgreSQL）</li>
+    <li>重算向量索引（nomic-embed-text 在新环境跑一遍）</li>
+    <li>部署前端静态文件到 Nginx</li>
+    <li>配置 SSL 证书 + 域名解析</li>
+    <li>更新飞书事件订阅 URL 为云端域名</li>
+    <li>健康检查 + 冒烟测试</li>
+    <li>设置定时备份（PostgreSQL 每日 dump → COS）</li>
+  </div>
+
+  <div class="callout">
+    <p><strong>备份策略：</strong>PostgreSQL 每日自动 dump 到 COS，保留 30 天。Docker 镜像版本化管理，随时可回滚。.env 配置文件加密存储，不进 Git。</p>
+  </div>
+
+  <!-- Checklist for user -->
+  <h2>九、启动前需要提供</h2>
+  <div class="checklist">
+    <li>腾讯云 CVM 已开通（4核 16G / 100G SSD / Ubuntu 22.04）</li>
+    <li>SSH 登录方式（IP + 密码或密钥）</li>
+    <li>域名 + 子域名（如 ops.xxx.com）</li>
+    <li>SSL 证书（或由我在服务器申请免费的 Let's Encrypt）</li>
+    <li>飞书开放平台权限（更新事件订阅 URL）</li>
+    <li>确认 COS 是否已开通（未开通可先用服务器磁盘）</li>
+  </div>
+
+  <div class="footer">
+    <p>消费者运营中台 · 云端部署方案 v1.1 · 2026-08-27</p>
+  </div>
+
+</div>
+</body>
+</html>

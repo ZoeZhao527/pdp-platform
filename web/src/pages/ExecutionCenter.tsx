@@ -81,12 +81,34 @@ function ModulePage({
 
 function ChannelBody({
   task,
+  onRefresh,
 }: {
   task?: ExecutionInstructionBoard["tasks"][number];
+  onRefresh?: () => void;
 }) {
   if (!task) {
     return <div className="empty">还没有生成该渠道内容</div>;
   }
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState("");
+  const sendToFeishu = async () => {
+    if (!task || sending) return;
+    setSending(true);
+    setSendResult("");
+    try {
+      const res = await api.sendTodoToFeishu(task.id);
+      if (res.ok) {
+        setSendResult("已发送到飞书群");
+      } else {
+        setSendResult(res.send_result?.detail || "发送失败");
+      }
+      onRefresh?.();
+    } catch (err) {
+      setSendResult("发送失败：" + (err as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
   return (
     <>
       <pre className="exec-content">{task.content}</pre>
@@ -97,6 +119,10 @@ function ChannelBody({
           <span className="cell-muted block-text">拦截：{task.guardrail.note}</span>
         )}
         {statusPill(task.status)}
+        <button type="button" className="btn small" disabled={sending || task.status === "已下发"} onClick={sendToFeishu} style={{ marginLeft: "auto" }}>
+          {sending ? "发送中..." : task.status === "已下发" ? "已发送" : "下发到飞书"}
+        </button>
+        {sendResult && <span className="cell-muted">{sendResult}</span>}
       </div>
     </>
   );
@@ -107,7 +133,9 @@ export default function ExecutionCenter() {
   const [tab, setTab] = useState<TabKey>("overview");
   const [report, setReport] = useState<ReportDetail | null>(null);
   const [error, setError] = useState("");
-  const [exporting, setExporting] = useState(false);
+ const [exporting, setExporting] = useState(false);
+ const [feishuTaskId, setFeishuTaskId] = useState<string | null>(null);
+ const [feishuMsg, setFeishuMsg] = useState("");
 
   const load = useCallback(() => {
     api
@@ -116,7 +144,21 @@ export default function ExecutionCenter() {
       .catch((err: Error) => setError(err.message));
   }, []);
 
-  const exportExcel = async () => {
+ const sendTaskToFeishu = async (taskId: string) => {
+   if (!taskId || feishuTaskId) return;
+   setFeishuTaskId(taskId);
+   setFeishuMsg("");
+   try {
+     const res = await api.sendTodoToFeishu(taskId);
+     setFeishuMsg(res.ok ? "已发送到飞书群" : (res.send_result?.detail || "发送失败"));
+     load();
+   } catch (err) {
+     setFeishuMsg("发送失败：" + (err as Error).message);
+   } finally {
+     setFeishuTaskId(null);
+   }
+ };
+ const exportExcel = async () => {
     setExporting(true);
     try {
       await api.exportExecution();
@@ -428,13 +470,24 @@ export default function ExecutionCenter() {
                     </table>
                   </div>
                 ) : (
-                  <ChannelBody task={channelTask(item, tab)} />
+                 <ChannelBody task={channelTask(item, tab)} onRefresh={load} />
                 )}
                 {channelTask(item, tab) && (
-                  <div className="exec-card-foot" style={{ marginTop: 8 }}>
+                  <div className="exec-card-foot" style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     {statusPill(channelTask(item, tab)!.status)}
                     {channelTask(item, tab)!.due_at && (
                       <span className="cell-muted">截止：{channelTask(item, tab)!.due_at}</span>
+                    )}
+                    <WriteGate>
+                      <button type="button" className="btn small primary"
+                        disabled={!!feishuTaskId || channelTask(item, tab)!.status === "已下发"}
+                        onClick={() => sendTaskToFeishu(channelTask(item, tab)!.id)}
+                        style={{ marginLeft: "auto" }}>
+                        {feishuTaskId === channelTask(item, tab)!.id ? "发送中..." : channelTask(item, tab)!.status === "已下发" ? "已发送" : "下发到飞书"}
+                      </button>
+                    </WriteGate>
+                    {feishuMsg && true && (
+                      <span className="cell-muted">{feishuMsg}</span>
                     )}
                   </div>
                 )}

@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>消费者运营中台 · 产品发布会执行方案</title>
+<style>
+  :root {
+    --ink: #172033;
+    --muted: #5f6f85;
+    --line: #e2e8f0;
+    --bg: #f4f7fb;
+    --card: #ffffff;
+    --brand: #2f6bff;
+    --soft: #eef3ff;
+    --accent: #12b886;
+    --warn: #f59f00;
+    --pink: #e64980;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.75;
+    padding-bottom: 80px;
+  }
+  .hero {
+    background: linear-gradient(135deg, #15223c 0%, #1f3a8a 55%, #2563eb 100%);
+    color: #fff;
+    padding: 58px 32px 46px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::after {
+    content: "";
+    position: absolute;
+    right: -70px; top: -70px; width: 320px; height: 320px;
+    background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  .hero .wrap { position: relative; z-index: 1; }
+  .hero .tag { font-size: 13px; letter-spacing: 0.14em; border: 1px solid rgba(255,255,255,0.35); display: inline-block; padding: 4px 14px; border-radius: 999px; margin-bottom: 14px; }
+  .hero h1 { font-size: 34px; font-weight: 700; letter-spacing: 0; }
+  .hero p { font-size: 15px; opacity: 0.82; margin-top: 8px; max-width: 760px; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+  section { margin-top: 40px; }
+  .sec-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .sec-num { background: var(--brand); color: #fff; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+  .sec-head h2 { font-size: 21px; font-weight: 700; }
+  .sec-head .sub { color: var(--muted); font-size: 13.5px; margin-left: 6px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 24px; margin-bottom: 14px; }
+  .card h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+  .card p { font-size: 14.5px; color: #334155; margin-bottom: 6px; }
+  .card p b { color: var(--ink); }
+  .card ul, .card ol { margin: 6px 0 0 20px; font-size: 14.5px; color: #334155; }
+  .card li { margin-bottom: 5px; }
+  .pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #eef2f7; color: #40506a; margin-right: 6px; margin-bottom: 4px; }
+  .pill.blue { background: var(--soft); color: var(--brand); }
+  .pill.green { background: #e6faf3; color: #0b8f68; }
+  .pill.orange { background: #fff4e0; color: #b26b00; }
+  .pill.pink { background: #fdeef4; color: #c2255c; }
+
+  /* 主持人台词卡 */
+  .script-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--brand);
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin-bottom: 14px;
+  }
+  .script-card .meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .script-card .meta .step-label { font-weight: 700; font-size: 15px; }
+  .script-card .meta .time { font-size: 12.5px; color: var(--muted); background: #eef2f7; padding: 2px 10px; border-radius: 999px; }
+  .script-card .quote { font-size: 15.5px; font-weight: 700; color: #0f1f4d; background: var(--soft); border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; }
+  .script-card .detail { font-size: 13.5px; color: var(--muted); }
+  .script-card .detail b { color: #334155; }
+
+  /* 时间轴 */
+  .timeline { position: relative; padding-left: 30px; }
+  .timeline::before { content: ""; position: absolute; left: 9px; top: 8px; bottom: 8px; width: 2px; background: #d6dee9; }
+  .tl-item { position: relative; margin-bottom: 18px; }
+  .tl-item::before { content: ""; position: absolute; left: -27px; top: 8px; width: 12px; height: 12px; border-radius: 50%; background: var(--brand); border: 3px solid #fff; box-shadow: 0 0 0 2px var(--brand); }
+  .tl-item.alt::before { background: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  .tl-time { display: inline-block; background: var(--soft); color: var(--brand); font-size: 12.5px; font-weight: 600; padding: 2px 10px; border-radius: 6px; margin-bottom: 4px; }
+  .tl-item.alt .tl-time { background: #e6faf3; color: #0b8f68; }
+  .tl-title { font-size: 16px; font-weight: 700; }
+  .tl-role { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .tl-desc { font-size: 14px; color: #334155; margin-top: 5px; }
+  .tl-desc ul { margin: 5px 0 0 18px; }
+  .tl-desc li { margin-bottom: 3px; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; background: #f1f5f9; padding: 9px 12px; font-size: 13px; color: var(--muted); font-weight: 600; }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .checklist { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  @media (max-width: 720px) { .checklist { grid-template-columns: 1fr; } }
+  .check-item { display: flex; gap: 8px; align-items: flex-start; background: #f8fafc; border-radius: 8px; padding: 8px 12px; font-size: 13.5px; color: #334155; }
+  .check-item::before { content: "□"; color: var(--brand); font-weight: 700; flex-shrink: 0; }
+  .foot { margin-top: 48px; text-align: center; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="wrap">
+    <span class="tag">PRODUCT LAUNCH · 发布会执行方案</span>
+    <h1>消费者运营中台 · 产品发布会执行方案</h1>
+    <p>方案完整可落地，主持人台词精简到最少。你只管念加粗的台词，其他环节交给团队和老板。</p>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- 1 总体设计 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">1</span><h2>总体设计</h2><span class="sub">建议时长 60 分钟 · 可压缩为 45 分钟</span></div>
+    <div class="card">
+      <p><span class="pill blue">主题</span><b>「让运营长出算力」</b></p>
+      <p><span class="pill green">一句话定位</span>消费者运营中台：把代运营公司多年的品牌经验，变成一套会学习、会组合、会自我迭代的策略引擎。</p>
+      <p><span class="pill orange">观众</span>公司管理层 / 运营团队 / 销售团队 / 技术团队 / 可邀请 1-2 家意向客户见证</p>
+      <p><span class="pill pink">节奏原则</span>先讲「为什么做」，再讲「怎么做出来的」，再讲「现在能用什么」，最后宣布发布。故事在前，功能在后，老板收尾，发布压轴。</p>
+    </div>
+  </section>
+
+  <!-- 2 主持人台词卡 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">2</span><h2>主持人台词卡</h2><span class="sub">你全程只需说这 7 段话</span></div>
+
+    <div class="script-card">
+      <div class="meta"><span class="step-label">① 开场</span><span class="time">00:00 - 00:01</span></div>
+      <div class="quote">「欢迎大家。今天只讲一件事：我们把多年的运营经验，做成了一套会自己生长的系统。它叫消费者运营中台。」</div>
+      <div class="detail">说完停 2 秒，自然过渡到产品介绍。</div>
+    </div>
+
+    <div class="script-card">
+      <div class="meta"><span class="step-label">② 产品介绍开场</span><span class="time">00:01 - 00:02</span></div>
+      <div class="quote">「为什么做它？因为运营经验一直长在人身上，人一走，经验就断了。所以我们想让它留下来、长出来。」</div>
+      <div class="detail">接下来由你按第三节的「产品介绍讲稿」展开，约 5-8 分钟。</div>
+    </div>
+
+    <div class="script-card">
+      <div class="meta"><span class="step-label">③ 演示串场</span><span class="time">00:10 - 00:11</span></div>
+      <div class="quote">「光说不如现场看。我们现场下一个真实指令，看看它怎么生成一套完整方案。」</div>
+      <div class="detail">演示结束后补一句：<b>「从指令到方案，刚刚只用了这几分钟。」</b></div>
+    </div>
+
+    <div class="script-card">
+      <div class="meta"><span class="step-label">④ 引老板</span><span class="time">00:20 - 00:21</span></div>
+      <div class="quote">「接下来，有请我们老板，讲讲为什么要做这件事。有请 XX 总。」</div>
+      <div class="detail">老板讲完，你只需要说谢谢，不额外总结。</div>
+    </div>
+
+    <div class="script-card">
+      <div class="meta"><span class="step-label">⑤ 正式发布</span><span class="time">00:30 - 00:31</span></div>
+      <div class="quote">「现在，我宣布：消费者运营中台，正式发布。我们一起倒数：5、4、3、2、1。」</div>
+      <div class="detail">灯光暗 → 点亮神经元大屏 → 切蛋糕 / 合影。</div>
+    </div>
+
+    <div class="script-card">
+      <div class="meta"><span class="step-label">⑥ 发布后一句</span><span class="time">00:32</span></div>
+      <div class="quote">「这是我们的第一版，接下来它会越长越聪明。感谢大家。」</div>
+      <div class="detail">说完引导大家体验、合影。</div>
+    </div>
+
+    <div class="script-card">
+      <div class="meta"><span class="step-label">⑦ 收尾</span><span class="time">自由交流</span></div>
+      <div class="quote">「大家可以去体验区试试，有问题随时找我们团队。谢谢大家。」</div>
+      <div class="detail">之后你就不需要再说话了。</div>
+    </div>
+  </section>
+
+  <!-- 3 产品介绍讲稿 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">3</span><h2>产品介绍讲稿</h2><span class="sub">约 5-8 分钟 · 照顺序讲即可</span></div>
+
+    <div class="card">
+      <h3>第一部分 · 三句话讲清产品（必讲，约 2 分钟）</h3>
+      <ul>
+        <li><b>是什么：</b>面向代运营公司的消费者运营中台，覆盖美业、餐饮、零售、教育、宠物、大健康六大行业。</li>
+        <li><b>做什么：</b>运营人员输入一个指令，系统会结合品牌资料、市场信号和行业知识，自动生成活动、货盘、话术、人群、内容排期、KPI 和合规约束，并排到整个月，到点自动下发。</li>
+        <li><b>人做什么：</b>只做两件事——发指令、做验收。中间全部自动化。</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>第二部分 · 为什么做（讲痛点，约 1-2 分钟）</h3>
+      <ul>
+        <li>代运营的核心资产是经验，但经验长在人身上：优秀运营一走，品牌打法就断档。</li>
+        <li>每个客户从头来一遍：活动重新策划、货盘重新组合、话术重新写，同样的坑反复踩。</li>
+        <li>方案好坏没有沉淀，做完就丢，下个月又从零开始。</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>第三部分 · 怎么做到的（讲过程，约 1-2 分钟）</h3>
+      <ul>
+        <li><b>起步：</b>先在真实美业项目上跑通，把组卡逻辑、话术逻辑、活动规划喂进系统，让 AI 学会模仿真实打法。</li>
+        <li><b>抽象：</b>把美业经验抽象成可复用的行业模板，再沉淀出餐饮、零售、教育、宠物、大健康五套，实现跨行业适配。</li>
+        <li><b>成长：</b>每一次执行、每一次验收 KPI、每一次飞书效果回传，都会回流成策略节点的效果权重，让系统越用越准。</li>
+        <li><b>今天：</b>已经从本地跑到云端，支持多品牌同时使用，数据完全隔离。</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>第四部分 · 一句话收束（必讲）</h3>
+      <p><b>「所以，今天发布的不是一个静态工具，而是一个会自己生长的策略神经元。」</b></p>
+    </div>
+  </section>
+
+  <!-- 4 完整时间轴 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">4</span><h2>完整流程</h2><span class="sub">60 分钟标准版</span></div>
+    <div class="timeline">
+      <div class="tl-item">
+        <span class="tl-time">00:00 - 00:05</span>
+        <div class="tl-title">暖场签到</div>
+        <div class="tl-role">会务组</div>
+        <div class="tl-desc">循环播放系统演示录屏；签到台放蛋糕；背景音乐轻快节奏。</div>
+      </div>
+      <div class="tl-item">
+        <span class="tl-time">00:05 - 00:10</span>
+        <div class="tl-title">开场 + 产品介绍</div>
+        <div class="tl-role">主持人（你）</div>
+        <div class="tl-desc">开场一句 + 按第三节讲稿展开产品介绍。建议配 4 张大屏画面：痛点场景 → 第一版界面 → 本地跑通实拍 → 今日云端版本。</div>
+      </div>
+      <div class="tl-item alt">
+        <span class="tl-time">00:10 - 00:20</span>
+        <div class="tl-title">产品能力演示</div>
+        <div class="tl-role">演示助手 / 产品主讲人</div>
+        <div class="tl-desc">
+          <ul>
+            <li>现场下一个真实指令（例：秋季美业品牌 30 天运营方案）</li>
+            <li>展示 7 大板块：活动 / 货盘 / 目标人群 / 销售执行 / 内容排期 / KPI / 合规护栏</li>
+            <li>展示整月排期日历 + 到点自动下发</li>
+            <li>展示策略沉淀：验收 KPI 回流后，策略效果分变化</li>
+          </ul>
+        </div>
+      </div>
+      <div class="tl-item">
+        <span class="tl-time">00:20 - 00:30</span>
+        <div class="tl-title">老板讲话</div>
+        <div class="tl-role">老板</div>
+        <div class="tl-desc">讲愿景、讲为什么要投这个产品、讲对团队的期许。框架见第五节。</div>
+      </div>
+      <div class="tl-item alt">
+        <span class="tl-time">00:30 - 00:33</span>
+        <div class="tl-title">正式发布 · 点亮神经元</div>
+        <div class="tl-role">主持人 + 老板 + 产品团队</div>
+        <div class="tl-desc">灯光调暗 → 大屏 30 秒发布动画 → 倒计时 → 点亮「消费者运营中台」→ 切蛋糕 / 举杯 / 合影。</div>
+      </div>
+      <div class="tl-item">
+        <span class="tl-time">00:33 - 00:60</span>
+        <div class="tl-title">自由交流 · 体验 · 合影</div>
+        <div class="tl-role">全体</div>
+        <div class="tl-desc">体验区开放，运营 / 销售现场提问，技术团队驻场答疑，预告下一阶段（企微 / 更多渠道 / 更多行业）。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 老板讲话框架 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">5</span><h2>老板讲话框架</h2><span class="sub">约 8 分钟 · 给老板的提示卡</span></div>
+    <div class="grid2">
+      <div class="card">
+        <h3>第一段 · 为什么做（约 1 分钟）</h3>
+        <p>「过去十年，我们帮客户运营品牌；今天开始，我们要让运营这件事，长出它自己的智慧。」</p>
+        <p class="small" style="color:var(--muted);">强调：不是跟风做 AI，是客户每天的真实需求逼着我们往前走。</p>
+      </div>
+      <div class="card">
+        <h3>第二段 · 我们做到了什么（约 2 分钟）</h3>
+        <p>「现在，运营人员输入一个指令，系统会生成完整的活动、货盘、话术、排期，并排到每一天、到点自动下发。人只做两件事：发指令、做验收。」</p>
+        <p class="small" style="color:var(--muted);">强调：效率提升、经验沉淀、跨行业复用。</p>
+      </div>
+      <div class="card">
+        <h3>第三段 · 对团队说（约 2 分钟）</h3>
+        <p>「这个产品不是一天做出来的，是大家在真实品牌项目里磨出来的。我们要把一线的经验继续喂给它，让它越用越聪明。」</p>
+        <p class="small" style="color:var(--muted);">感谢产品、运营、技术团队。</p>
+      </div>
+      <div class="card">
+        <h3>第四段 · 对客户和未来说（约 2 分钟）</h3>
+        <p>「今天只是一个开始。下一步我们会接更多渠道、更多行业、更多客户，让这个神经元服务更多品牌。」</p>
+        <p class="small" style="color:var(--muted);">宣布正式发布，邀请大家体验。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 发布环节设计 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">6</span><h2>发布环节设计</h2><span class="sub">把「宣布发布」做成全场最高潮</span></div>
+    <div class="card">
+      <p><span class="pill blue">方案 A · 点亮神经元（推荐）</span>大屏显示灰色神经元图谱，倒计时后老板按下发布键，神经元从中心点亮，向外生长出品牌分支，全场灯光渐亮。</p>
+      <p style="margin-top:8px;"><span class="pill green">方案 B · 启动指令</span>老板现场输入一句真实指令（如「为美业品牌生成秋季 30 天运营方案」），大屏实时展示系统生成资产包，生成完成即宣布发布。</p>
+      <p style="margin-top:8px;"><span class="pill orange">方案 C · 切蛋糕</span>蛋糕中央放「消费者运营中台」LOGO，发布后切蛋糕合影。蛋糕上可写：「让运营长出算力」。</p>
+      <p style="margin-top:12px;font-size:14px;color:var(--muted);">建议 A+B 结合：先点亮神经元，再现场生成一个真实资产包，作为「第一份发布会纪念策略」。</p>
+    </div>
+  </section>
+
+  <!-- 7 45分钟精简版 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">7</span><h2>45 分钟精简版</h2><span class="sub">时间紧张时的替代节奏</span></div>
+    <div class="card">
+      <table>
+        <tr><th>时间</th><th>环节</th><th>时长</th><th>要点</th></tr>
+        <tr><td>00:00-00:03</td><td>开场</td><td>3 分钟</td><td>主持人一句话点题</td></tr>
+        <tr><td>00:03-00:15</td><td>产品故事 + 演示合并</td><td>12 分钟</td><td>讲稿压缩为 6 分钟，演示 6 分钟只跑一个指令</td></tr>
+        <tr><td>00:15-00:25</td><td>老板讲话</td><td>10 分钟</td><td>保留四段式，各段压缩</td></tr>
+        <tr><td>00:25-00:30</td><td>正式发布</td><td>5 分钟</td><td>点亮神经元 + 切蛋糕</td></tr>
+        <tr><td>00:30-00:45</td><td>自由交流</td><td>15 分钟</td><td>体验区开放</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- 8 会前准备 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">8</span><h2>会前准备清单</h2></div>
+    <div class="checklist">
+      <div class="check-item">确定时间、场地、参会人数，发出邀请</div>
+      <div class="check-item">准备发布会大屏背景 / 主题 KV / 横幅</div>
+      <div class="check-item">录制系统演示备用视频（防现场断网）</div>
+      <div class="check-item">准备真实演示账号与干净数据（避免泄露客户信息）</div>
+      <div class="check-item">测试现场网络、投影、音响、灯光</div>
+      <div class="check-item">排练：你讲产品 + 老板讲稿 + 演示走位</div>
+      <div class="check-item">准备蛋糕 / 伴手礼 / 主题语</div>
+      <div class="check-item">摄影摄像安排、合影站位</div>
+      <div class="check-item">发布后 1 小时内发内部简报</div>
+      <div class="check-item">体验区电脑提前打开系统登录页</div>
+    </div>
+  </section>
+
+  <div class="foot">消费者运营中台 · 产品发布会执行方案 · 内部策划稿</div>
+</div>
+
+</body>
+</html>

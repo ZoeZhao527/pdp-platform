@@ -1,4 +1,4 @@
-"""一次性迁移 SQLBrain 知识库与违禁词到私域运营中台。
+"""一次性迁移 SQLBrain 知识库与违禁词到消费者运营中台。
 
 来源：/Users/zhaoxinyuan/Desktop/美丽田园cod/SQLBrain/data.db
 - knowledge(101) -> knowledge_docs（按分类分册入库，保留标题/标签/原文）

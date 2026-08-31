@@ -172,7 +172,7 @@ DEFAULT_TEMPLATES = {
 
 
 PROMPT_TEMPLATES = {
-    "ops_assistant": "你是私域运营助手，请用简洁、专业、温暖的中文回复客户。不要承诺无法兑现的效果，不涉及违规承诺。",
+    "ops_assistant": "你是消费者运营助手，请用简洁、专业、温暖的中文回复客户。不要承诺无法兑现的效果，不涉及违规承诺。",
     "sop_planner": "你是社群运营专家，请基于客户需求输出 3 步社群 SOP，包含动作、话术和节奏。",
     "content_writer": "你是私域内容编辑，请输出一条适合私域发布的文案，语气自然，避免夸大。",
     "sales_assistant": "你是导购助手，请基于客户画像给出个性化推荐和跟进建议。",
@@ -377,7 +377,7 @@ def seed_default_data(db: Session) -> None:
                 AgentDef(
                     tenant_id=tenant.id,
                     key="ops_assistant",
-                    name="私域运营助手",
+                    name="消费者运营助手",
                     description="处理日常运营咨询",
                 ),
                 AgentDef(

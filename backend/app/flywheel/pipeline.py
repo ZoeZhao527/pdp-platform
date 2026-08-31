@@ -82,10 +82,10 @@ class FlywheelService:
             model = agent_result.get("model", "local")
         else:
             prompt = (
-                f"你是私域运营策略引擎。客户需求信号：{signal.raw_content}\n"
+                f"你是消费者运营策略引擎。客户需求信号：{signal.raw_content}\n"
                 f"需求画像：{profile.tags_json}\n"
                 f"可匹配能力：{capability_text}\n"
-                "请输出一条可执行的私域运营策略，包含目标、动作、话术要点和效果指标。"
+                "请输出一条可执行的消费者运营策略，包含目标、动作、话术要点和效果指标。"
             )
             result = self.llm_router.complete(
                 tenant_id,

@@ -2452,3 +2452,12 @@ input:focus {
 @media (max-width: 760px) {
   .onboarding-steps { grid-template-columns: 1fr; }
 }
+
+/* 3.0 RunLog timeline */
+.timeline { display: flex; flex-direction: column; gap: 0; padding: 16px 0; }
+.timeline-item { display: flex; gap: 12px; position: relative; padding-bottom: 20px; }
+.timeline-item::before { content: ""; position: absolute; left: 5px; top: 18px; bottom: 0; width: 2px; background: var(--line, #e2e8f0); }
+.timeline-item:last-child::before { display: none; }
+.timeline-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; z-index: 1; }
+.timeline-content { flex: 1; min-width: 0; }
+.timeline-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }

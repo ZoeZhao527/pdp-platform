@@ -40,7 +40,7 @@ class OrchestrationEngine:
             conversation = self.db.get(Conversation, conversation_id)
             if conversation:
                 profile_summary = self.memory.build_profile_summary(conversation.customer_id)
-        base_prompt = template.content if template else "你是一个私域运营助手，请简洁、专业地回复。"
+        base_prompt = template.content if template else "你是一个消费者运营助手，请简洁、专业地回复。"
         if profile_summary:
             base_prompt = f"{profile_summary}\n\n{base_prompt}"
         if user_text:
