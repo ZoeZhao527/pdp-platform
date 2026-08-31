@@ -170,8 +170,8 @@ def feishu_handle(payload: FeishuHandleIn, tenant_id: str = Depends(get_tenant_i
 @router.get("/api/v1/feishu/summary")
 def feishu_summary(tenant_id: str = Depends(get_tenant_id)) -> dict:
     """今日飞书回传统计：消息数、解析数、操作类型分布、KPI更新数。"""
-    from datetime import datetime, date
-    today = date.today().isoformat()
+    from datetime import datetime
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     with SessionLocal() as db:
         # Count feedback events from Feishu today
         rows = (
@@ -375,7 +375,7 @@ def build_execution_collection_message(db, tenant_id: str, instruction_id: str =
     from app.models import StrategyTask, Instruction
     from datetime import date, datetime
 
-    today = date.today().isoformat()
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     q = db.query(StrategyTask).filter(
         StrategyTask.tenant_id == tenant_id,
         StrategyTask.status.in_(["待执行", "执行中"]),

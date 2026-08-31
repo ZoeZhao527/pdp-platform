@@ -66,6 +66,7 @@ def run_morning_dispatch(
     """9:00 晨间任务清单：今日待执行 → 分渠道 → 发群 + 存库。"""
     client = client or get_feishu_client(tenant_id)
     today = _today_str()
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
     rows = (
         db.query(StrategyTask)
@@ -151,11 +152,12 @@ def run_evening_summary(
     """
     client = client or get_feishu_client(tenant_id)
     today = _today_str()
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
     rows = (
         db.query(FeedbackEvent)
         .filter(FeedbackEvent.tenant_id == tenant_id)
-        .filter(FeedbackEvent.created_at >= today)
+        .filter(FeedbackEvent.created_at >= today_start)
         .all()
     )
 
@@ -248,6 +250,7 @@ def run_evening_summary(
 def get_today_briefs(db: Session, tenant_id: str) -> dict[str, Any]:
     """看板用：取今日最新晨间/晚间简报。"""
     today = _today_str()
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     result: dict[str, Any] = {"morning": None, "evening": None, "pending_tasks": []}
     for rtype in ("morning", "evening"):
         row = (
