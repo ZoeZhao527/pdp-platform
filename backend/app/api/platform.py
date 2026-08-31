@@ -461,8 +461,12 @@ def _patched_generate_instruction_impl(instruction_id, runtime):
             card_count = len(all_cards)
 
             # Build context for EACH brand card (not just the first)
-            brand_lines = [f"\n【品牌指定销售卡项 - 共{card_count}张 - 必须围绕这些卡项生成所有内容】"]
-            brand_lines.append("重要：不要自己组卡，不要从知识库添加额外卡项，货盘只包含以下品牌指定的卡项。")
+            brand_lines = [f"\n\n===== 品牌指定销售卡项（共{card_count}张）— 这是品牌方给来的成品卡，直接使用，禁止自行组卡 ====="]
+            brand_lines.append("【强制规则】")
+            brand_lines.append("1. 货盘卡项(card_structure.cards)只能包含以下品牌成品卡，不允许从知识库或其他来源添加任何额外卡项")
+            brand_lines.append("2. 不要执行任何组卡逻辑（不要组合护理项目为新卡），品牌成品卡已经是最终产品")
+            brand_lines.append("3. 所有销售话术、朋友圈内容、1v1话术、活动策划必须围绕这些品牌成品卡展开")
+            brand_lines.append("4. product_mix字段也只能包含这些品牌成品卡")
             brand_lines.append("")
 
             for idx, bc in enumerate(all_cards):
@@ -899,121 +903,126 @@ def chat_instruction(
     runtime: Runtime = Depends(get_runtime),
     _auth: dict = Depends(require_roles("admin", "operator")),
 ):
-    """Create instruction directly, parse keywords from natural language."""
+    """Create instruction via LLM analysis, then interactive clarification."""
     import re as _re
+    import json as _json
 
     msg = payload.message.strip()
+
+    # --- 1. LLM-based instruction analysis ---
+    analysis_prompt = (
+        "你是消费者运营指令分析专家。分析用户指令，提取结构化参数，判断5个关键维度是否齐全。\n"
+        "维度: audience(目标人群), budget(预算/目标), activity(主推产品/活动方向), "
+        "channels(触达渠道), timeframe(执行周期)。\n\n"
+        "输出JSON:\n"
+        '{"parsed_params":{"goal_type":"","goal_value":"","budget":"","layers":"",'
+        '"activity_type":"","content_channels":"","frequency":"","automation_mode":"半自动"},'
+        '"missing_dimensions":[{"dimension":"","question":"","examples":[]}],'
+        '"title":"简短标题","summary":"参数摘要"}\n\n'
+        "规则: 缺2个及以上维度才放入missing_dimensions; 只返回JSON不输出解释。"
+    )
+
     params: dict = {}
-
-    m = _re.search(r'预算[：:\s]*([0-9.]+\s*[万千百元万]*)', msg)
-    if m:
-        params["budget"] = m.group(1).strip()
-
-    m = _re.search(r'(GMV|gmv|销售额|订单量|转化率|复购率|拉新)[^0-9]*(增长|提升|达到|目标)?\s*([0-9.]+\s*%?)', msg)
-    if m:
-        params["goal_type"] = m.group(1)
-        params["goal_value"] = f"{m.group(1)} {'增长' if '增长' in (m.group(2) or '') else '目标'} {m.group(3)}".strip()
-        params["kpi_metrics"] = m.group(1)
-
-    m = _re.search(r'针对([^，。\s]+(?:客户|人群|用户|客))', msg)
-    if m:
-        params["layers"] = m.group(1).strip()
-
-    activity_kw = []
-    for kw in ["秒杀", "裂变", "会员日", "直播", "节庆", "体验", "补水发", "充值", "拼团", "打卡", "抽奖"]:
-        if kw in msg:
-            activity_kw.append(kw)
-    m = _re.search(r'策划([^，。]+活动)', msg)
-    if m:
-        activity_kw.insert(0, m.group(1).strip())
-    if activity_kw:
-        params["activity_type"] = "、".join(activity_kw)
-
-    _channels = []
-    for ch in ["朋友圈", "社群", "1v1", "一对一", "公众号", "短视频", "直播", "短信"]:
-        if ch in msg:
-            _channels.append("1v1" if ch == "一对一" else ch)
-    if _channels:
-        params["content_channels"] = "、".join(_channels)
-
-    m = _re.search(r'(每天|每周|每月|每日|每\d+天)\s*[0-9]*\s*条', msg)
-    if m:
-        params["frequency"] = m.group(0)
-
-    params["automation_mode"] = "全自动" if "全自动" in msg else "半自动"
-
-    title = msg
-    for prefix in ["帮我策划", "帮我做", "帮我设计", "策划", "设计", "做一个", "来一个"]:
-        if title.startswith(prefix):
-            title = title[len(prefix):]
-            break
-    title = title[:20].replace("，", "·").replace("。", "").strip()
-    if not title:
-        title = msg[:20]
-
-    summary_parts = []
-    label_map = {"goal_value": "目标", "layers": "人群", "activity_type": "活动", "budget": "预算", "content_channels": "渠道", "frequency": "频率"}
-    for key, label in label_map.items():
-        val = params.get(key)
-        if val:
-            summary_parts.append(f"{label}: {val}")
-    summary = "、".join(summary_parts) if summary_parts else "已按默认参数创建"
-
-    raw_cb = getattr(payload, "campaign_brief", None)
-    cb = _normalize_campaign_brief(raw_cb) if raw_cb else None
-
-    # --- 3.0 Interactive: pre-generation clarification ---
-    _has_audience = bool(params.get("layers")) or any(
-        kw in msg for kw in [
-            "新客", "老客", "会员", "潜客", "体验客", "复购", "干皮",
-            "敏感肌", "油皮", "干性", "混合", "高潜", "沉睡", "新粉",
-        ]
-    )
-    _has_budget = bool(params.get("budget")) or bool(params.get("goal_value"))
-    _has_activity = bool(params.get("activity_type")) or bool(
-        cb and isinstance(cb, dict) and cb.get("cards")
-    )
-    _has_channels = bool(params.get("content_channels"))
-    _has_timeframe = any(
-        kw in msg for kw in [
-            "本周", "本月", "下周", "周", "月", "季", "秋", "春", "夏", "冬",
-            "8月", "9月", "10月", "11月", "12月", "1月", "2月", "3月", "4月",
-            "5月", "6月", "7月", "即将", "马上",
-        ]
-    )
-
+    title = msg[:20]
+    summary = "已按默认参数创建"
     _missing_dims = []
-    if not _has_audience:
-        _missing_dims.append({
-            "dimension": "audience",
-            "question": "这次运营针对哪类客户？",
-            "examples": ["新客拉新", "老客复购", "会员激活", "体验客转化"],
-        })
-    if not _has_budget:
-        _missing_dims.append({
-            "dimension": "budget",
-            "question": "预算或目标是什么？",
-            "examples": ["预算5000元", "GMV增长20%", "转化率15%"],
-        })
-    if not _has_activity:
-        _missing_dims.append({
-            "dimension": "activity",
-            "question": "主推什么产品或活动方向？",
-            "examples": ["推广XX卡项", "秋季补水活动", "秒杀裂变"],
-        })
-    if not _has_channels:
-        _missing_dims.append({
-            "dimension": "channels",
-            "question": "主要通过哪些渠道触达？",
-            "examples": ["朋友圈+1v1", "社群+公众号", "全渠道"],
-        })
-    if not _has_timeframe:
-        _missing_dims.append({
-            "dimension": "timeframe",
-            "question": "执行周期是什么时候？",
-            "examples": ["本周", "本月", "秋季9月"],
-        })
 
+    try:
+        import concurrent.futures as _cf
+        _exec = _cf.ThreadPoolExecutor(max_workers=1)
+        _fut = _exec.submit(
+            runtime.llm_router.complete,
+            tenant_id=runtime.tenant_id,
+            messages=[
+                {"role": "system", "content": analysis_prompt},
+                {"role": "user", "content": msg},
+            ],
+            complexity="complex",
+            max_tokens=1024,
+            response_format={"type": "json_object"},
+        )
+        llm_result = _fut.result(timeout=15)
+        _exec.shutdown(wait=False)
+        raw = llm_result.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+        if raw.endswith("```"):
+            raw = raw[:-3].strip()
+        analysis = _json.loads(raw)
+
+        params = analysis.get("parsed_params", {})
+        if not isinstance(params, dict):
+            params = {}
+        # Ensure automation_mode has a default
+        if not params.get("automation_mode"):
+            params["automation_mode"] = "全自动" if "全自动" in msg else "半自动"
+
+        title = analysis.get("title", "") or msg[:20]
+        summary = analysis.get("summary", "") or "已按默认参数创建"
+        _missing_dims = analysis.get("missing_dimensions", [])
+        if not isinstance(_missing_dims, list):
+            _missing_dims = []
+    except Exception:
+        # Fallback: regex-based parsing
+        m = _re.search(r'预算[：:\s]*([0-9.]+\s*[万千百元万]*)', msg)
+        if m:
+            params["budget"] = m.group(1).strip()
+        m = _re.search(r'(GMV|gmv|销售额|订单量|转化率|复购率|拉新)[^0-9]*(增长|提升|达到|目标)?\s*([0-9.]+\s*%?)', msg)
+        if m:
+            params["goal_type"] = m.group(1)
+            params["goal_value"] = f"{m.group(1)} 目标 {m.group(3)}".strip()
+            params["kpi_metrics"] = m.group(1)
+        m = _re.search(r'针对([^，。\s]+(?:客户|人群|用户|客))', msg)
+        if m:
+            params["layers"] = m.group(1).strip()
+        activity_kw = []
+        for kw in ["秒杀", "裂变", "会员日", "直播", "节庆", "体验", "补水发", "充值", "拼团", "打卡", "抽奖"]:
+            if kw in msg:
+                activity_kw.append(kw)
+        if activity_kw:
+            params["activity_type"] = "、".join(activity_kw)
+        _channels = []
+        for ch in ["朋友圈", "社群", "1v1", "一对一", "公众号", "短视频", "直播", "短信"]:
+            if ch in msg:
+                _channels.append("1v1" if ch == "一对一" else ch)
+        if _channels:
+            params["content_channels"] = "、".join(_channels)
+        params["automation_mode"] = "全自动" if "全自动" in msg else "半自动"
+        title = msg[:20].replace("，", "·").replace("。", "").strip() or msg[:20]
+
+
+    # --- Safety net: if LLM didn't find missing dims, check with keyword rules ---
+    if len(_missing_dims) < 2:
+        _has_audience = bool(params.get("layers")) or any(
+            kw in msg for kw in [
+                "新客", "老客", "会员", "潜客", "体验客", "复购", "干皮",
+                "敏感肌", "油皮", "干性", "混合", "高潜", "沉睡", "新粉",
+            ]
+        )
+        _has_budget = bool(params.get("budget")) or bool(params.get("goal_value"))
+        _has_activity = bool(params.get("activity_type")) or bool(
+            cb and isinstance(cb, dict) and cb.get("cards")
+        ) if 'cb' in dir() else bool(params.get("activity_type"))
+        _has_channels = bool(params.get("content_channels"))
+        _has_timeframe = any(
+            kw in msg for kw in [
+                "本周", "本月", "下周", "周", "月", "季", "秋", "春", "夏", "冬",
+                "8月", "9月", "10月", "11月", "12月", "1月", "2月", "3月", "4月",
+                "5月", "6月", "7月", "即将", "马上",
+            ]
+        )
+        if not _has_audience:
+            _missing_dims.append({"dimension": "audience", "question": "这次运营针对哪类客户？", "examples": ["新客拉新", "老客复购", "会员激活", "体验客转化"]})
+        if not _has_budget:
+            _missing_dims.append({"dimension": "budget", "question": "预算或目标是什么？", "examples": ["预算5000元", "GMV增长20%", "转化率15%"]})
+        if not _has_activity:
+            _missing_dims.append({"dimension": "activity", "question": "主推什么产品或活动方向？", "examples": ["推广XX卡项", "秋季补水活动", "秒杀裂变"]})
+        if not _has_channels:
+            _missing_dims.append({"dimension": "channels", "question": "主要通过哪些渠道触达？", "examples": ["朋友圈+1v1", "社群+公众号", "全渠道"]})
+        if not _has_timeframe:
+            _missing_dims.append({"dimension": "timeframe", "question": "执行周期是什么时候？", "examples": ["本周", "本月", "秋季9月"]})
+
+    # --- 2. Clarification: if 2+ dimensions missing, ask user ---
     if len(_missing_dims) >= 2:
         return {
             "needs_clarification": True,
@@ -1021,6 +1030,10 @@ def chat_instruction(
             "questions": _missing_dims[:3],
             "parsed_params": params,
         }
+
+    # --- 3. Create instruction ---
+    raw_cb = getattr(payload, "campaign_brief", None)
+    cb = _normalize_campaign_brief(raw_cb) if raw_cb else None
 
     instruction = Instruction(
         tenant_id=runtime.tenant_id,
@@ -1045,6 +1058,7 @@ def chat_instruction(
         "summary": summary,
         "status": instruction.status,
     }
+
 
 
 router.add_api_route(

@@ -637,9 +637,11 @@ const sendChatOrRevise = async () => {
 const chatGenerate = async (instructionId: string) => {
   setChatLoading(true);
   setChatMessages((prev) => [...prev, { role: "assistant", content: "正在生成资产包，请稍候..." }]);
+  let _polling = false;
   try {
     const res = await api.generateInstruction(instructionId);
      if (res.status === "generating") {
+       _polling = true;
        setChatMessages((prev) => [...prev, { role: "assistant", content: "后台正在生成资产包，预计1-2分钟，完成后自动刷新指令列表..." }]);
        load();
        if (pollRef.current) clearInterval(pollRef.current);
@@ -661,6 +663,7 @@ const chatGenerate = async (instructionId: string) => {
                 can_revise: done,
               }]);
               setChatLoading(false);
+              load();
             }
           })
           .catch(() => undefined);
@@ -685,7 +688,9 @@ const chatGenerate = async (instructionId: string) => {
    } catch (err) {
      setChatMessages((prev) => [...prev, { role: "assistant", content: `生成失败：${(err as Error).message}` }]);
     } finally {
-      setChatLoading(false);
+      if (!_polling) {
+        setChatLoading(false);
+      }
       load();
     }
   };
