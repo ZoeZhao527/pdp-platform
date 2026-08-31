@@ -53,6 +53,16 @@ const EMPTY_PARAMS = {
 
 type ExampleTemplate = { category: string; text: string };
 
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+  instruction_id?: string;
+  title?: string;
+  summary?: string;
+  asset?: AssetPackage | null;
+  can_revise?: boolean;
+};
+
 const EXAMPLE_TEMPLATES: Record<string, ExampleTemplate[]> = {
   beauty: [
    { category: "活动策划", text: "帮我策划8月敏感肌活动，主打补水修复，针对干皮和敏感肌客户，预算5万，目标GMV增长20%" },
@@ -436,23 +446,34 @@ export default function InstructionCenter() {
   } | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
-  const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string; instruction_id?: string; title?: string; summary?: string }[]>([]);
-  const [chatInput, setChatInput] = useState("");
- const [chatLoading, setChatLoading] = useState(false);
+ const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
+   try {
+     const _tid = localStorage.getItem("pdp_tenant_id") || "default";
+     return JSON.parse(localStorage.getItem(`pdp_chat_messages_${_tid}`) || "[]");
+   }
+   catch { return []; }
+ });
+const [chatInput, setChatInput] = useState("");
+const [chatLoading, setChatLoading] = useState(false);
   const [briefTarget, setBriefTarget] = useState<{ id: string; title: string } | null>(null);
   const [briefCards, setBriefCards] = useState<any[]>([]);
   const [briefDraft, setBriefDraft] = useState({ card_name: "", market_price: "", selling_price: "", items: "", selling_point: "" });
   const [briefSaving, setBriefSaving] = useState(false);
-  const [attachedBrief, setAttachedBrief] = useState<any[]>([]);
+ const [attachedBrief, setAttachedBrief] = useState<any[]>([]);
+const [pendingClarification, setPendingClarification] = useState<{
+  originalMessage: string;
+  questions: { dimension: string; question: string; examples: string[] }[];
+  attachedBrief?: any[];
+} | null>(null);
 
   const currentIndustry = industries.find((item) => item.id === industryId);
 
- const load = useCallback(() => {
-   api
-     .platformInstructions()
-     .then(setRows)
-     .catch((err: Error) => setError(err.message));
- }, []);
+const load = useCallback(() => {
+  api
+    .platformInstructions()
+    .then(setRows)
+    .catch((err: Error) => setError(err.message));
+}, []);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -461,6 +482,13 @@ export default function InstructionCenter() {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    try {
+      const _tid = localStorage.getItem("pdp_tenant_id") || "default";
+      localStorage.setItem(`pdp_chat_messages_${_tid}`, JSON.stringify(chatMessages.slice(-50)));
+    } catch { /* ignore quota */ }
+  }, [chatMessages]);
 
  useEffect(() => {
     api
@@ -485,70 +513,175 @@ export default function InstructionCenter() {
   }, [industryId]);
 
 
-  const sendChat = async () => {
-    const msg = chatInput.trim();
-    if (!msg || chatLoading) return;
+ const sendChat = async () => {
+   const msg = chatInput.trim();
+   if (!msg || chatLoading) return;
+   setChatInput("");
+   setAttachedBrief([]);
+   setChatLoading(true);
+   setChatMessages((prev) => [...prev, { role: "user", content: msg }]);
+   try {
+    const res = await api.chatInstruction(msg, undefined, attachedBrief.length ? { cards: attachedBrief } : undefined);
+   if (res.needs_clarification) {
+     const qs = (res.questions || [])
+       .map((q: any) => `▸ ${q.question}\n  示例：${(q.examples || []).join("、")}`)
+       .join("\n\n");
+     setPendingClarification({
+       originalMessage: msg,
+       questions: res.questions || [],
+       attachedBrief: attachedBrief.length ? [...attachedBrief] : [],
+     });
+     setChatMessages((prev) => [...prev, {
+       role: "assistant",
+       content: `${res.summary || `已识别你的意图「${res.title}」`}\n\n还需要补充以下信息：\n\n${qs}\n\n请直接回复补充内容`,
+     }]);
+     setChatLoading(false);
+     return;
+   }
+    setChatMessages((prev) => [...prev, {
+      role: "assistant",
+      content: `已创建指令「${res.title}」\n${res.summary}\n正在自动生成资产包，预计1-3分钟...`,
+      instruction_id: res.instruction_id,
+      title: res.title,
+      summary: res.summary,
+    }]);
+    load();
+    // Auto-generate asset package immediately after instruction creation
+    chatGenerate(res.instruction_id);
+   } catch (err) {
+     setChatMessages((prev) => [...prev, { role: "assistant", content: `解析失败：${(err as Error).message}` }]);
+     setChatLoading(false);
+   }
+ };
+ // 3.0: If the last assistant message has can_revise + instruction_id,
+ // the user's new message is a modification request → route to revise endpoint
+const sendChatOrRevise = async () => {
+  const msg = chatInput.trim();
+  if (!msg || chatLoading) return;
+  // --- Clarification flow: merge user's answer into the original instruction ---
+  if (pendingClarification) {
+    const combined = pendingClarification.originalMessage + "（补充说明：" + msg + "）";
+    const brief = pendingClarification.attachedBrief || [];
+    setPendingClarification(null);
     setChatInput("");
-    setAttachedBrief([]);
     setChatLoading(true);
     setChatMessages((prev) => [...prev, { role: "user", content: msg }]);
     try {
-     const res = await api.chatInstruction(msg, undefined, attachedBrief.length ? { cards: attachedBrief } : undefined);
+      const res = await api.chatInstruction(combined, undefined, brief.length ? { cards: brief } : undefined);
       if (res.needs_clarification) {
+        setPendingClarification({
+          originalMessage: combined,
+          questions: res.questions || [],
+          attachedBrief: brief,
+        });
         const qs = (res.questions || [])
           .map((q: any) => `▸ ${q.question}\n  示例：${(q.examples || []).join("、")}`)
           .join("\n\n");
         setChatMessages((prev) => [...prev, {
           role: "assistant",
-          content: `已识别你的意图「${res.title}」，但还需要补充以下信息：\n\n${qs}\n\n请直接回复补充内容，比如「针对老客复购，渠道用朋友圈和1v1，预算5000元」`,
+          content: `${res.summary || ""}\n\n还需要补充以下信息：\n\n${qs}\n\n请继续回复补充内容。`,
         }]);
+        setChatLoading(false);
         return;
       }
-     setChatMessages((prev) => [...prev, {
-       role: "assistant",
-       content: `已创建指令「${res.title}」\n${res.summary}\n状态：${res.status}\n可在下方指令列表点击"生成策略"产出资产包，或直接说"生成"让我自动产出。`,
-       instruction_id: res.instruction_id,
-       title: res.title,
-       summary: res.summary,
-     }]);
+      setChatMessages((prev) => [...prev, {
+        role: "assistant",
+        content: `已创建指令「${res.title}」\n${res.summary}\n正在自动生成资产包，预计1-3分钟...`,
+        instruction_id: res.instruction_id,
+        title: res.title,
+        summary: res.summary,
+      }]);
+      load();
+      chatGenerate(res.instruction_id);
     } catch (err) {
       setChatMessages((prev) => [...prev, { role: "assistant", content: `解析失败：${(err as Error).message}` }]);
-    } finally {
       setChatLoading(false);
-      load();
     }
-  };
- const chatGenerate = async (instructionId: string) => {
-   setChatLoading(true);
-   setChatMessages((prev) => [...prev, { role: "assistant", content: "正在生成资产包，请稍候..." }]);
-   try {
-     const res = await api.generateInstruction(instructionId);
-      if (res.status === "generating") {
-        setChatMessages((prev) => [...prev, { role: "assistant", content: "后台正在生成资产包，预计1-2分钟，完成后自动刷新指令列表..." }]);
-        load();
-        if (pollRef.current) clearInterval(pollRef.current);
-        pollRef.current = setInterval(() => {
-          api.platformInstructions()
-            .then((newRows) => {
-              setRows(newRows);
-              const target = newRows.find((r) => r.id === instructionId);
-              if (target && target.status !== "生成中") {
-                if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-                const done = target.status === "已产出";
-                setChatMessages((prev) => [...prev, {
-                  role: "assistant",
-                  content: done
-                    ? `资产包已生成！请在指令列表点击"查看资产包"查看详细内容。`
-                    : `生成${target.status}，请重试或检查日志。`,
-                }]);
-                setChatLoading(false);
-              }
-            })
-            .catch(() => undefined);
-        }, 3000);
-        return;
-      }
-      setChatMessages((prev) => [...prev, { role: "assistant", content: `资产包已生成！请在指令列表点击"查看资产包"查看详细内容。` }]);
+    return;
+  }
+  // Find the last assistant message with an instruction_id
+   const lastWithInstr = [...chatMessages].reverse().find(
+     (m) => m.role === "assistant" && m.instruction_id && m.can_revise
+   );
+   if (lastWithInstr?.instruction_id) {
+     // Route to revision
+     setChatInput("");
+     setChatLoading(true);
+     setChatMessages((prev) => [...prev, { role: "user", content: msg }]);
+     setChatMessages((prev) => [...prev, { role: "assistant", content: "正在根据你的修改意见修订资产包，请稍候..." }]);
+     try {
+       const res = await api.reviseInstruction(lastWithInstr.instruction_id, msg);
+       setChatMessages((prev) => [...prev, {
+         role: "assistant",
+         content: `资产包已修订完成。你可以继续提出修改意见，或批准下发执行。`,
+         instruction_id: res.instruction_id,
+         asset: res.asset,
+         can_revise: true,
+       }]);
+       load();
+     } catch (err) {
+       setChatMessages((prev) => [...prev, {
+         role: "assistant",
+         content: `修订失败：${(err as Error).message}。你可以重新描述修改意见，或直接批准当前版本。`,
+         instruction_id: lastWithInstr.instruction_id,
+         can_revise: true,
+       }]);
+     } finally {
+       setChatLoading(false);
+     }
+     return;
+   }
+   // Normal flow: create new instruction
+   sendChat();
+ };
+const chatGenerate = async (instructionId: string) => {
+  setChatLoading(true);
+  setChatMessages((prev) => [...prev, { role: "assistant", content: "正在生成资产包，请稍候..." }]);
+  try {
+    const res = await api.generateInstruction(instructionId);
+     if (res.status === "generating") {
+       setChatMessages((prev) => [...prev, { role: "assistant", content: "后台正在生成资产包，预计1-2分钟，完成后自动刷新指令列表..." }]);
+       load();
+       if (pollRef.current) clearInterval(pollRef.current);
+       pollRef.current = setInterval(() => {
+         api.platformInstructions()
+           .then((newRows) => {
+             setRows(newRows);
+            const target = newRows.find((r) => r.id === instructionId);
+            if (target && target.status !== "生成中") {
+              if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+              const done = target.status === "已产出";
+              setChatMessages((prev) => [...prev, {
+                role: "assistant",
+                content: done
+                  ? `资产包已生成！下方展示完整内容，你可以直接提出修改意见（如"把预算改成3万"），满意后点批准。`
+                  : `生成${target.status}，请重试或检查日志。`,
+                instruction_id: done ? instructionId : undefined,
+                asset: done ? target.asset : null,
+                can_revise: done,
+              }]);
+              setChatLoading(false);
+            }
+          })
+          .catch(() => undefined);
+      }, 3000);
+      return;
+     }
+     setChatMessages((prev) => [...prev, {
+       role: "assistant",
+       content: `资产包已生成！下方展示完整内容，你可以直接提出修改意见，满意后点批准。`,
+       instruction_id: instructionId,
+       can_revise: true,
+     }]);
+     // Load the asset for inline display
+     api.platformInstructions().then((newRows) => {
+       const target = newRows.find((r) => r.id === instructionId);
+       if (target?.asset) {
+         setChatMessages((prev) => prev.map((m, i) =>
+           i === prev.length - 1 ? { ...m, asset: target.asset } : m
+         ));
+       }
+     }).catch(() => undefined);
    } catch (err) {
      setChatMessages((prev) => [...prev, { role: "assistant", content: `生成失败：${(err as Error).message}` }]);
     } finally {
@@ -812,28 +945,58 @@ export default function InstructionCenter() {
              </div>
            </div>
           )}
-          {chatMessages.map((msg, i) => (
-            <div key={i} className={`chat-msg ${msg.role}`}>
-              <div className="chat-bubble">
-                {msg.content.split("\n").map((line, j) => (
-                  <p key={j}>{line}</p>
-                ))}
-                {msg.instruction_id && msg.role === "assistant" && (
-                  <div className="chat-actions">
-                   <WriteGate>
+        {chatMessages.map((msg, i) => (
+          <div key={i} className={`chat-msg ${msg.role}`}>
+            <div className="chat-bubble">
+              {msg.content.split("\n").map((line, j) => (
+                <p key={j}>{line}</p>
+              ))}
+              {msg.asset && (
+                <div className="chat-asset-inline" style={{ marginTop: 12, maxWidth: "100%", overflow: "auto", borderTop: "1px solid rgba(0,0,0,0.06)", paddingTop: 12 }}>
+                  <AssetView asset={msg.asset} />
+                </div>
+              )}
+              {msg.can_revise && msg.role === "assistant" && (
+                <div className="revise-hint" style={{ marginTop: 8, padding: "6px 10px", background: "rgba(99,102,241,0.08)", borderRadius: 6, fontSize: 12, color: "#6366f1" }}>
+                  在下方输入框输入修改意见（如"把预算改成3万"、"增加社群活动"），系统会重新修订资产包
+                </div>
+              )}
+              {msg.instruction_id && msg.role === "assistant" && (
+                <div className="chat-actions">
+                 <WriteGate>
+                   {!msg.can_revise && (
                      <button type="button" className="btn small primary" onClick={() => chatGenerate(msg.instruction_id!)}>
                        <Play size={14} />
                        生成资产包
                      </button>
-                   </WriteGate>
+                   )}
+                   {msg.can_revise && (
+                     <button type="button" className="btn small primary" onClick={() => action(msg.instruction_id!, "approve")}>
+                       <CheckCircle2 size={14} />
+                       批准下发
+                     </button>
+                   )}
+                 </WriteGate>
+                 {msg.can_revise && (
+                   <button type="button" className="btn small" onClick={() => {
+                     setAssetInstructionId(msg.instruction_id!);
+                     setAsset(msg.asset || null);
+                     setTab("list");
+                   }}>
+                     查看指令列表
+                   </button>
+                 )}
+                 {!msg.can_revise && (
                    <button type="button" className="btn small" onClick={() => setTab("list")}>
                      查看指令列表
                    </button>
-                  </div>
-                )}
-              </div>
+                 )}
+                </div>
+              )}
             </div>
-          ))}
+          </div>
+        ))}
+
           {chatLoading && (
             <div className="chat-msg assistant">
               <div className="chat-bubble typing">思考中...</div>
@@ -870,18 +1033,24 @@ export default function InstructionCenter() {
               className="chat-input"
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  sendChat();
-                }
-              }}
-             placeholder="描述你的运营需求... (Enter 发送, Shift+Enter 换行)"
-              rows={2}
-            />
-            <button type="button" className="btn primary" onClick={sendChat} disabled={chatLoading || !chatInput.trim()}>
-              发送
-            </button>
+             onKeyDown={(e) => {
+               if (e.key === "Enter" && !e.shiftKey) {
+                 e.preventDefault();
+                 sendChatOrRevise();
+               }
+             }}
+            placeholder={
+              pendingClarification
+                ? "补充缺失信息后发送，系统会自动合并到原始指令... (Enter 发送)"
+              : chatMessages.some((m) => m.can_revise)
+                ? "输入修改意见（如：把预算改成3万、增加社群活动），或直接批准 →  (Enter 发送)"
+                : "描述你的运营需求... (Enter 发送, Shift+Enter 换行)"
+            }
+             rows={2}
+           />
+           <button type="button" className="btn primary" onClick={sendChatOrRevise} disabled={chatLoading || !chatInput.trim()}>
+             发送
+           </button>
           </WriteGate>
         </div>
       </section>

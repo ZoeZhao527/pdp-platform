@@ -1,23 +1,20 @@
 import {
+  Activity,
   BookOpen,
   Cpu,
   LayoutDashboard,
   ListChecks,
   MessageSquarePlus,
-  MessagesSquare,
   RefreshCcw,
   Settings2,
   ShieldCheck,
   Target,
   TerminalSquare,
-  Users,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { api } from "./api";
-import Conversations from "./pages/Conversations";
 import DevConsole from "./pages/DevConsole";
-import Customers from "./pages/Customers";
 import ExecutionCenter from "./pages/ExecutionCenter";
 import Flywheel from "./pages/Flywheel";
 import Guardrails from "./pages/Guardrails";
@@ -28,32 +25,32 @@ import Models from "./pages/Models";
 import Overview from "./pages/Overview";
 import Settings from "./pages/Settings";
 import Strategies from "./pages/Strategies";
+import RunLog from "./pages/RunLog";
 import type { TenantRow } from "./types";
+import { ToastProvider } from "./components/Toast";
 
 type PageKey =
   | "overview"
-  | "conversations"
   | "instructions"
   | "execution"
   | "flywheel"
   | "knowledge"
   | "strategies"
   | "models"
-  | "customers"
+  | "runlog"
   | "guardrails"
   | "dev"
   | "settings";
 
 const NAV: { key: PageKey; label: string; icon: typeof LayoutDashboard }[] = [
   { key: "overview", label: "总览", icon: LayoutDashboard },
-  { key: "conversations", label: "会话", icon: MessagesSquare },
   { key: "flywheel", label: "需求飞轮", icon: RefreshCcw },
   { key: "instructions", label: "指令中心", icon: MessageSquarePlus },
   { key: "execution", label: "执行中心", icon: ListChecks },
   { key: "knowledge", label: "知识库", icon: BookOpen },
   { key: "strategies", label: "策略沉淀中心", icon: Target },
   { key: "models", label: "LLM 网关", icon: Cpu },
-  { key: "customers", label: "客户画像", icon: Users },
+  { key: "runlog", label: "运行日志", icon: Activity },
   { key: "guardrails", label: "护栏", icon: ShieldCheck },
   { key: "settings", label: "配置", icon: Settings2 },
   { key: "dev", label: "开发者后台", icon: TerminalSquare },
@@ -90,6 +87,10 @@ useEffect(() => {
    if (target?.industry_id) {
      localStorage.setItem("pdp_industry_id", target.industry_id);
    }
+   // Clear old global chat key + any stale tenant-specific chat keys
+   localStorage.removeItem("pdp_chat_messages");
+   const _oldTid = localStorage.getItem("pdp_tenant_id");
+   if (_oldTid) localStorage.removeItem(`pdp_chat_messages_${_oldTid}`);
    localStorage.setItem("pdp_tenant_id", id);
    setTenantId(id);
    setPage("overview");
@@ -100,6 +101,7 @@ const logout = () => {
     localStorage.removeItem("pdp_user");
     localStorage.removeItem("pdp_tenant_id");
     localStorage.removeItem("pdp_industry_id");
+    localStorage.removeItem("pdp_chat_messages");
     window.location.reload();
  };
 
@@ -108,12 +110,13 @@ const logout = () => {
   }
 
   return (
+    <ToastProvider>
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand">
-          <img src="/logo.svg" alt="容联云" className="brand-logo" />
-          <div>
-            <div className="brand-name">私域运营中台</div>
+       <div className="brand">
+          <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="容联云" className="brand-logo" />
+         <div>
+            <div className="brand-name">消费者运营中台</div>
             <div className="brand-sub">Agent Platform</div>
           </div>
        </div>
@@ -150,18 +153,18 @@ const logout = () => {
 
       <main className="content" key={tenantId}>
         {page === "overview" && <Overview onNavigate={(key: string) => setPage(key as PageKey)} />}
-        {page === "conversations" && <Conversations />}
         {page === "instructions" && <InstructionCenter />}
         {page === "execution" && <ExecutionCenter />}
         {page === "flywheel" && <Flywheel onOpenFull={() => setPage("strategies")} />}
         {page === "knowledge" && <Knowledge />}
         {page === "strategies" && <Strategies />}
         {page === "models" && <Models />}
-        {page === "customers" && <Customers />}
+        {page === "runlog" && <RunLog />}
         {page === "guardrails" && <Guardrails />}
         {page === "settings" && <Settings />}
         {page === "dev" && <DevConsole />}
       </main>
     </div>
+    </ToastProvider>
   );
 }

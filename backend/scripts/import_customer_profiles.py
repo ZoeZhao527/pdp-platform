@@ -15,7 +15,7 @@ from app.config import get_settings  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 from app.models import Customer, DemandSignal  # noqa: E402
 
-SOURCE = "/Users/zhaoxinyuan/Desktop/私域运营中台/美丽田园/美丽田园cod/美丽田园项目资料/美丽田园客服日常沟通记录表.xlsx"
+SOURCE = "/Users/zhaoxinyuan/Desktop/消费者运营中台/美丽田园/美丽田园cod/美丽田园项目资料/美丽田园客服日常沟通记录表.xlsx"
 
 
 def _clean(value) -> str:

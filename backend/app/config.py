@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", ".env.local"), env_prefix="PDP_", extra="ignore")
 
-    app_name: str = "私域运营 Agent 中台"
+    app_name: str = "消费者运营中台"
     environment: str = "dev"
     database_url: str = "sqlite:///./pdp.db"
     redis_url: str = "redis://localhost:6379/0"

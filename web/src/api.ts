@@ -5,6 +5,7 @@ import type {
   ApiLogRow,
   AuditLogRow,
   AuthUser,
+  AssetPackage,
   BrandRow,
   BrandDetail,
  BrandUserRow,
@@ -69,50 +70,19 @@ import type {
   WebhookResult,
   Workbench,
 } from "./types";
+import http, { type AxiosRequestConfig } from "./api/request";
+import { downloadFile } from "./utils/download";
 
 const BASE = "/api/v1";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers: Record<string, string> = {};
-  if (!(init?.body instanceof FormData)) {
-    headers["Content-Type"] = "application/json";
+async function request<T>(path: string, init?: { method?: string; body?: BodyInit }): Promise<T> {
+  const method = (init?.method || "GET").toUpperCase();
+  const config: AxiosRequestConfig = {};
+  if (init?.body !== undefined && init?.body !== null) {
+    config.data = init.body;
   }
-  const tenantId = localStorage.getItem("pdp_tenant_id");
-  if (tenantId) headers["X-Tenant-Id"] = tenantId;
-  const industryId = localStorage.getItem("pdp_industry_id");
-  if (industryId) headers["X-Industry-Id"] = industryId;
-  const token = localStorage.getItem("pdp_token");
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${BASE}${path}`, {
-    headers,
-    ...init,
-  });
-  if (!res.ok) {
-    let detail = "";
-    try {
-      const body = await res.json();
-      detail = body.detail || body.message || JSON.stringify(body);
-    } catch {
-      detail = await res.text();
-    }
-    const friendly: Record<number, string> = {
-      401: "登录已过期，请重新登录",
-      403: "没有操作权限",
-      404: "资源不存在",
-      422: "参数格式不正确",
-      429: "请求太频繁，请稍后重试",
-      500: "服务器内部错误，请稍后重试",
-      502: "网关错误，请稍后重试",
-      503: "服务暂时不可用",
-    };
-    const msg = friendly[res.status] || detail || `请求失败 (${res.status})`;
-    if (res.status === 401) {
-      localStorage.removeItem("pdp_token");
-      window.location.href = "/login";
-    }
-    throw new Error(msg);
-  }
-  return res.json() as Promise<T>;
+  const res = await http.request<T>({ url: path, method, ...config });
+  return res.data;
 }
 
 export const api = {
@@ -258,15 +228,28 @@ export const api = {
  llmModels: () => request<LLMModel[]>("/admin/llm/models"),
  llmUsage: () => request<LLMUsage>("/admin/llm/usage"),
   llmPresets: () => request<Record<string, string>[]>("/admin/llm/presets"),
-  llmCreateModel: (data: {
-    name: string; provider: string; model: string; base_url: string;
-    api_key?: string; priority?: number; complexity?: string;
-    cost_per_million?: number; enabled?: boolean;
-  }) =>
-    request<{ id: string }>("/admin/llm/models", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+ llmCreateModel: (data: {
+   name: string; provider: string; model: string; base_url: string;
+   api_key?: string; priority?: number; complexity?: string;
+   cost_per_million?: number; enabled?: boolean;
+ }) =>
+   request<{ id: string }>("/admin/llm/models", {
+     method: "POST",
+     body: JSON.stringify(data),
+   }),
+ llmUpdateModel: (modelId: string, data: {
+   name: string; provider: string; model: string; base_url: string;
+   api_key?: string; priority?: number; complexity?: string;
+   cost_per_million?: number; enabled?: boolean;
+ }) =>
+   request<{ id: string; updated: boolean }>(`/admin/llm/models/${modelId}`, {
+     method: "PUT",
+     body: JSON.stringify(data),
+   }),
+ llmDeleteModel: (modelId: string) =>
+   request<{ id: string; deleted: boolean }>(`/admin/llm/models/${modelId}`, {
+     method: "DELETE",
+   }),
   customers: () => request<CustomerProfile[]>("/customers"),
   customerProfile: (id: string) => request<CustomerProfile>(`/customers/${id}/profile`),
   marketOverview: () => request<MarketOverview>("/market/overview"),
@@ -434,34 +417,43 @@ export const api = {
     request<{ id: string; status: string; tasks: number }>(`/platform/instructions/${id}/approve`, {
       method: "POST",
     }),
-  rejectInstruction: (id: string) =>
-    request<{ id: string; status: string }>(`/platform/instructions/${id}/reject`, { method: "POST" }),
-  acceptInstruction: (id: string, payload?: { kpi_results?: Record<string, string | number> }) =>
-    request<{ id: string; status: string; report_id: string }>(`/platform/instructions/${id}/accept`, {
+ rejectInstruction: (id: string) =>
+   request<{ id: string; status: string }>(`/platform/instructions/${id}/reject`, { method: "POST" }),
+  reviseInstruction: (id: string, message: string) =>
+    request<{
+      instruction_id: string;
+      status: string;
+      asset: AssetPackage;
+      revision_note: string;
+    }>(`/platform/instructions/${id}/revise`, {
       method: "POST",
-      body: payload ? JSON.stringify(payload) : undefined,
+      body: JSON.stringify({ message }),
     }),
-  exportInstruction: async (id: string) => {
-    const token = localStorage.getItem("pdp_token");
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    const tenantId = localStorage.getItem("pdp_tenant_id");
-    if (tenantId) headers["X-Tenant-Id"] = tenantId;
-    const res = await fetch(`${BASE}/platform/instructions/${id}/export`, { headers });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const blob = await res.blob();
-    const disposition = res.headers.get("Content-Disposition") || "";
-    const match = disposition.match(/filename\*=UTF-8''(.+)/);
-    const filename = match ? decodeURIComponent(match[1]) : "资料包.xlsx";
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-   URL.revokeObjectURL(url);
- },
+  listRunlogs: (params?: { module?: string; instruction_id?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.module) qs.set("module", params.module);
+    if (params?.instruction_id) qs.set("instruction_id", params.instruction_id);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    return request<
+      Array<{
+        id: string;
+        instruction_id: string | null;
+        module: string;
+        event: string;
+        detail: string | null;
+        operator: string;
+        extra: Record<string, unknown> | null;
+        created_at: string | null;
+      }>
+    >(`/platform/runlogs${qs.toString() ? `?${qs}` : ""}`);
+  },
+ acceptInstruction: (id: string, payload?: { kpi_results?: Record<string, string | number> }) =>
+   request<{ id: string; status: string; report_id: string }>(`/platform/instructions/${id}/accept`, {
+     method: "POST",
+     body: payload ? JSON.stringify(payload) : undefined,
+   }),
+  exportInstruction: (id: string) =>
+    downloadFile(`/platform/instructions/${id}/export`, "资料包.xlsx"),
   getCampaignBrief: (id: string) =>
     request<{ instruction_id: string; campaign_brief: { cards?: any[]; source?: string; count?: number } }>(
       `/platform/instructions/${id}/campaign-brief`,
@@ -471,43 +463,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  uploadCampaignBrief: async (id: string, file: File) => {
-    const token = localStorage.getItem("pdp_token");
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    const tenantId = localStorage.getItem("pdp_tenant_id");
-    if (tenantId) headers["X-Tenant-Id"] = tenantId;
+  uploadCampaignBrief: (id: string, file: File) => {
     const form = new FormData();
     form.append("file", file);
-    const res = await fetch(`${BASE}/platform/instructions/${id}/campaign-brief/upload`, {
-      method: "POST",
-      headers,
-      body: form,
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
+    return request<{ cards?: unknown[]; source?: string; count?: number }>(
+      `/platform/instructions/${id}/campaign-brief/upload`,
+      { method: "POST", body: form },
+    );
   },
- exportExecution: async () => {
-    const token = localStorage.getItem("pdp_token");
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    const tenantId = localStorage.getItem("pdp_tenant_id");
-    if (tenantId) headers["X-Tenant-Id"] = tenantId;
-    const res = await fetch(`${BASE}/platform/execution/export`, { headers });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const blob = await res.blob();
-    const disposition = res.headers.get("Content-Disposition") || "";
-    const match = disposition.match(/filename\*=UTF-8''(.+)/);
-    const filename = match ? decodeURIComponent(match[1]) : "执行中心.xlsx";
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  },
+  exportExecution: () => downloadFile("/platform/execution/export", "执行中心.xlsx"),
   platformExecution: () => request<ExecutionCenterData>("/platform/execution"),
   platformReport: (id: string) => request<ReportDetail>(`/platform/reports/${id}`),
   updateExecutionTodo: (id: string, payload: { due_at?: string; due_time?: string; content?: string; status?: string }) =>
@@ -518,6 +482,11 @@ export const api = {
   dispatchExecutionTodo: (id: string) =>
     request<{ id: string; status: string; message_id?: string; guardrail?: { matched_rule: string; note: string } }>(
       `/platform/execution/todos/${id}/dispatch`,
+      { method: "POST" },
+    ),
+  sendTodoToFeishu: (id: string) =>
+    request<{ ok: boolean; task_id: string; task_title: string; status: string; send_result: any; mock?: boolean }>(
+      `/platform/execution/todos/${id}/send-feishu`,
       { method: "POST" },
     ),
   rebuildInstructionPlan: (id: string) =>

@@ -538,6 +538,19 @@ class OpsChannel(Base, TimestampMixin):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     tenant_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+
+class SystemRunlog(Base, TimestampMixin):
+    """3.0: 系统运行日志存档 — 记录全链路关键事件，作为策略自迭代依据。"""
+    __tablename__ = "system_runlogs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    instruction_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    module: Mapped[str] = mapped_column(String(32), nullable=False)  # instruction/execution/flywheel/feishu/guardrail
+    event: Mapped[str] = mapped_column(String(64), nullable=False)   # created/generated/revised/approved/dispatched/feedback_collected
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    operator: Mapped[str] = mapped_column(String(64), default="系统", nullable=False)
+    extra_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     kind: Mapped[str] = mapped_column(String(32), default="企微", nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

@@ -15,6 +15,7 @@ from app.models import (
     Instruction,
     Strategy,
     StrategyTask,
+    SystemRunlog,
     Tenant,
 )
 
@@ -29,6 +30,95 @@ DEFAULT_SEND_POLICY = {
     "max_per_day": {},
     "paused_channels": [],
 }
+
+
+def _log_run(db: Session, tenant_id: str, module: str, event: str,
+             detail: str = "", instruction_id: str | None = None) -> None:
+    """Write a system_runlog row for audit trail / RunLog page."""
+    try:
+        db.add(SystemRunlog(
+            tenant_id=tenant_id,
+            instruction_id=instruction_id,
+            module=module,
+            event=event,
+            detail=detail[:500] if detail else None,
+            operator="系统",
+            name=f"{module}.{event}",
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+_AUTOFIX_MAP: dict[str, str] = {
+    "最": "优选", "第一": "领先", "唯一": "甄选", "绝对": "非常",
+    "彻底": "深层", "永久": "持久", "全面": "多维度", "全方位": "多维度",
+    "高效": "优质", "速效": "即效", "100%": "", "纯天然": "天然源",
+    "极品": "精选", "顶级": "优选", "最佳": "精选", "零风险": "低风险", "美白": "亮肤",
+    "养颜": "护肤", "美容": "美护", "修复": "修护", "排毒": "净化",
+    "消炎": "舒缓", "杀菌": "抑菌", "抗炎": "舒缓", "补血": "养气色",
+    "补气": "养气色", "补肾": "固本", "活血": "促循环", "瘦身": "塑形",
+    "瘦脸": "小脸", "瘦腿": "紧致", "瘦腰": "紧致", "溶脂": "减脂",
+    "减肥": "体重管理", "除湿": "祛湿", "除菌": "抑菌", "激光": "光电",
+    "激活": "唤醒", "保证": "承诺", "根治": "改善", "治愈": "改善",
+    "治病": "调理", "包治": "呵护", "签约": "",
+}
+
+
+# Compound words that contain a keyword char but must NOT be replaced.
+_AUTOFIX_PROTECTED: set[str] = {
+    "最近", "最终", "最晚", "最早", "最后",
+    "最终方案", "最大化", "最优化", "最终结果", "最后一天",
+    "最后2天", "最后3天", "最想",
+}
+
+
+def _autofix_guardrail(text: str, matched_keyword: str) -> str:
+    """Replace blocked keywords with compliant alternatives (context-aware)."""
+    _PH = ""
+
+    def _safe_replace(source: str, keyword: str, replacement: str) -> str:
+        if keyword not in source:
+            return source
+        # Extract protected compounds first so their inner keyword chars
+        # are never touched by the replacement.
+        saved: dict[str, str] = {}
+        for i, compound in enumerate(sorted(_AUTOFIX_PROTECTED, key=len, reverse=True)):
+            if keyword in compound and compound in source:
+                tag = f"{_PH}P{i}{_PH}"
+                saved[tag] = compound
+                source = source.replace(compound, tag)
+        source = source.replace(keyword, replacement) if replacement else source.replace(keyword, "")
+        for tag, compound in saved.items():
+            source = source.replace(tag, compound)
+        return source
+
+    fixed = text
+    if matched_keyword in _AUTOFIX_MAP:
+        r = _AUTOFIX_MAP[matched_keyword]
+        fixed = _safe_replace(fixed, matched_keyword, r)
+    for word, repl in _AUTOFIX_MAP.items():
+        if word in fixed and word != matched_keyword:
+            fixed = _safe_replace(fixed, word, repl)
+    return fixed
+
+
+# Safe synonyms for protected compounds — used to pre-mask text before
+# guardrail checks so non-superlative '最' usage (最近/最后/…) passes.
+_GUARDRAIL_MASK: dict[str, str] = {
+    "最近": "近期", "最终": "终版", "最晚": "偏晚", "最早": "偏早",
+    "最后": "末尾", "最终方案": "定稿方案", "最大化": "充分化",
+    "最优化": "优化", "最终结果": "终版结果", "最后一天": "末尾一天",
+    "最后2天": "末尾2天", "最后3天": "末尾3天", "最想": "更想",
+}
+
+
+def _mask_for_guardrail(text: str) -> str:
+    """Replace protected compound words with safe synonyms before guardrail check."""
+    for compound, safe in _GUARDRAIL_MASK.items():
+        if compound in text:
+            text = text.replace(compound, safe)
+    return text
 
 
 def _short_channel(channel: str) -> str:
@@ -147,6 +237,64 @@ def _sales_playbook_for_channel(asset: dict, channel_key: str) -> str:
     return "\n\n".join(parts)
 
 
+def _is_generic_content(text: str) -> bool:
+    """Detect placeholder/generic text that lacks specific asset references."""
+    if not text or len(text.strip()) < 25:
+        return True
+    placeholders = [
+        "最近很多客户", "方案很适合", "感兴趣可以", "有问题随时",
+        "专属顾问", "会员日福利", "名额有限", "私信我",
+    ]
+    return any(p in text for p in placeholders)
+
+
+def _split_day_sections(rich: str) -> list[str]:
+    """Split multi-day channel content into per-day sections."""
+    import re as _re
+    # Match markers like 【朋友圈 第1天】, 【社群 Day1】, etc.
+    pattern = _re.compile(r"【[^】]*(?:第\d+天|Day\s*\d+)[^】]*】")
+    markers = list(pattern.finditer(rich))
+    if len(markers) < 2:
+        return [rich] if rich.strip() else []
+    sections: list[str] = []
+    for i, m in enumerate(markers):
+        start = m.start()
+        end = markers[i + 1].start() if i + 1 < len(markers) else len(rich)
+        section = rich[start:end].strip()
+        if section:
+            sections.append(section)
+    return sections
+
+
+def _enrich_todo_content(content: str, channel_key: str, asset: dict, day_num: int = 0) -> str:
+    """Replace generic daily-todo text with rich channel content, cycling by day."""
+    if not _is_generic_content(content):
+        return content
+    rich = _compose_channel_content(channel_key, asset)
+    if not rich or len(rich) < 30:
+        return content
+    sections = _split_day_sections(rich)
+    if len(sections) > 1:
+        idx = (day_num - 1) % len(sections) if day_num > 0 else 0
+        return sections[idx]
+    # 1v1: cycle through layered scripts by day
+    if channel_key == "1v1":
+        scripts = asset.get("script_templates", {})
+        layered = scripts.get("layered_scripts") or []
+        if layered:
+            idx = (day_num - 1) % len(layered) if day_num > 0 else 0
+            ls = layered[idx]
+            parts = [f"【1v1·{ls.get('layer', '')}】"]
+            if ls.get("opening"):
+                parts.append(f"开场：{_short(ls.get('opening', ''), 300)}")
+            if ls.get("close"):
+                parts.append(f"逼单：{_short(ls.get('close', ''), 300)}")
+            if ls.get("follow_up"):
+                parts.append(f"回访：{_short(ls.get('follow_up', ''), 300)}")
+            return "\n".join(parts)
+    return rich
+
+
 def materialize_plan_todos(db: Session, instruction: Instruction, days: int = PLAN_WINDOW_DAYS) -> int:
     """把资产包内容排期展开成可编辑的待办任务（待安排，不自动执行）。"""
     asset = instruction.asset_json or {}
@@ -165,6 +313,9 @@ def materialize_plan_todos(db: Session, instruction: Instruction, days: int = PL
                     due_date = (start + timedelta(days=created % max(days, 1))).strftime("%Y-%m-%d")
                 content = dc.get("content") or ""
                 channel = dc.get("channel") or "朋友圈"
+                ch_key = _short_channel(channel)
+                if _is_generic_content(content):
+                    content = _enrich_todo_content(content, ch_key, asset, created + 1)
                 db.add(
                     StrategyTask(
                         tenant_id=instruction.tenant_id,
@@ -187,6 +338,8 @@ def materialize_plan_todos(db: Session, instruction: Instruction, days: int = PL
                 )
                 created += 1
             db.commit()
+            _log_run(db, instruction.tenant_id, "execution", "todos_materialized",
+                     f"{instruction.title}: {created} daily todos", instruction.id)
             return created
         return 0
     # Build rich-content lookup from daily_content
@@ -221,6 +374,9 @@ def materialize_plan_todos(db: Session, instruction: Instruction, days: int = PL
                 content = material.get("copy") if material else ""
                 content_source = "materials" if content else ""
             content = content or schedule.get("goal") or ""
+            # Enrich generic content with rich channel content from asset
+            if _is_generic_content(content):
+                content = _enrich_todo_content(content, schedule_channel, asset, day_offset + 1)
             # Enrich 1v1 with sales playbook
             playbook = ""
             if schedule_channel == "1v1":
@@ -472,6 +628,9 @@ def dispatch_due_plan_todos(
         execute_channel_task(db, task)
         dispatched_today[channel_key] = dispatched_today.get(channel_key, 0) + 1
         dispatched += 1
+    if dispatched or missed:
+        _log_run(db, tenant_id, "execution", "scheduler_run",
+                 f"dispatched={dispatched} missed={missed} paused={paused}")
     return {
         "dispatched": dispatched,
         "missed": missed,
@@ -522,7 +681,7 @@ def _compose_channel_content(channel_key: str, asset: dict) -> str:
     card_items = card.get("items") or []
     if card_items:
         card_summary = "；".join(
-            f"{item.get('name', '')}({item.get('price', '')}元，{item.get('role', '')})"
+            f"{item.get('name', '')}({(item.get('price', '') or '').replace('元', '').strip()}元，{item.get('role', '')})"
             for item in card_items[:5]
         )
     else:
@@ -587,9 +746,20 @@ def _compose_channel_content(channel_key: str, asset: dict) -> str:
             ]
         )
     if channel_key == "短信":
-        return f"【短信拉新】{_short(theme, 40)}已开启，{_short(summary, 120)} 回复 1 领取福利 [短链] 拒收请回R"
+        sms_card = _short(card_summary, 80) if card_summary else "限定体验卡"
+        return f"【短信拉新】{_short(theme, 30)}已开启，{sms_card} 限时特惠，回复1领取福利 [短链] 拒收请回R"
     if channel_key == "跟进":
         return f"【自动跟进】{_short(follow_up, 260)} 若客户已回复，请按 {_short(closing, 120)} 推进成交"
+    if channel_key == "公众号":
+        parts = [
+            f"【公众号推文】{theme}",
+            f"活动目标：{goal or '待确认'}",
+        ]
+        if card_summary:
+            parts.append(f"主推卡项：{_short(card_summary, 300)}")
+        if card_rules:
+            parts.append(f"卡项规则：{_short(card_rules, 200)}")
+        return "\n\n".join(p for p in parts if p)
     return theme
 
 
@@ -636,6 +806,8 @@ def plan_execution_tasks(
         "asset": asset,
         "plan": plan,
     }
+    _log_run(db, instruction.tenant_id, "execution", "plan_created",
+             f"{instruction.title}: {len(children)} channel tasks", instruction.id)
     strategy_ids = dict(instruction.strategy_ids_json or {})
     strategy_ids["parent_task_id"] = parent_task.id
     instruction.strategy_ids_json = strategy_ids
@@ -668,11 +840,33 @@ def execute_channel_task(db: Session, task: StrategyTask) -> dict:
     result["channel"] = task.channel
     result["content"] = _short(task.script or task.title, 400)
 
-    guardrail = GuardrailService(db).check(task.tenant_id, task.script or task.title)
+    _check_text = _mask_for_guardrail(task.script or task.title)
+    guardrail = GuardrailService(db).check(task.tenant_id, _check_text)
     if not guardrail.passed:
-        _mark_blocked(db, task, guardrail.matched_rule or "护栏", guardrail.note or "")
-        db.commit()
-        return {"status": task.status, "reason": guardrail.note}
+        # Auto-fix: replace blocked words and re-check
+        keyword = (guardrail.note or "").replace("命中关键词: ", "").strip()
+        fixed_text = _autofix_guardrail(task.script or task.title, keyword)
+        if fixed_text != (task.script or task.title):
+            recheck = GuardrailService(db).check(task.tenant_id, fixed_text)
+            if recheck.passed:
+                task.script = fixed_text
+                result["autofixed"] = True
+                result["content"] = _short(fixed_text, 400)
+            else:
+                _mark_blocked(db, task, guardrail.matched_rule or "护栏", guardrail.note or "")
+                _log_run(db, task.tenant_id, "execution", "guardrail_blocked",
+                         f"{task.title}: {guardrail.note}", task.instruction_id)
+                db.commit()
+                return {"status": task.status, "reason": guardrail.note}
+        else:
+            _mark_blocked(db, task, guardrail.matched_rule or "护栏", guardrail.note or "")
+            _log_run(db, task.tenant_id, "execution", "guardrail_blocked",
+                     f"{task.title}: {guardrail.note}", task.instruction_id)
+            db.commit()
+            return {"status": task.status, "reason": guardrail.note}
+
+    _log_run(db, task.tenant_id, "execution", "dispatched",
+             f"{task.title} -> {task.channel}", task.instruction_id)
 
     channel_type = "mock"
     send = channel_gateway.send(
@@ -707,6 +901,8 @@ def execute_channel_task(db: Session, task: StrategyTask) -> dict:
     task.status = "已完成"
     db.commit()
     _refresh_acceptance(db, task.instruction_id)
+    _log_run(db, task.tenant_id, "execution", "task_completed",
+             f"{task.title}: sent via {task.channel}", task.instruction_id)
     return {"status": task.status, "message_id": send.message_id}
 
 

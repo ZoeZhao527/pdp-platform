@@ -19,7 +19,7 @@ from app.db import SessionLocal  # noqa: E402
 from app.knowledge.service import KnowledgeService  # noqa: E402
 from app.models import KnowledgeDoc  # noqa: E402
 
-ROOT = Path("/Users/zhaoxinyuan/Desktop/私域运营中台/美丽田园")
+ROOT = Path("/Users/zhaoxinyuan/Desktop/消费者运营中台/美丽田园")
 MAX_FILE_BYTES = 8 * 1024 * 1024
 SKIP_DIR_PARTS = {
     ".build",

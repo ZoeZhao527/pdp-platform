@@ -22,7 +22,7 @@ DEMO = {
             {"name": "下午茶组合", "category": "茶饮", "price": 88, "efficacy": ["下午茶", "打卡"], "segments": ["女性", "白领"], "seasons": ["下午"]},
             {"name": "节日礼盒", "category": "礼盒", "price": 199, "efficacy": ["送礼", "节日"], "segments": ["送礼人群"], "seasons": ["节庆"]},
         ],
-        "knowledge": "餐饮私域运营要点：会员日折扣、储值卡锁定复购、社群每日菜单预告、异业合作引流。",
+        "knowledge": "餐饮消费者运营要点：会员日折扣、储值卡锁定复购、社群每日菜单预告、异业合作引流。",
         "signals": ["顾客问有没有新菜品优惠", "老客咨询储值卡返利", "周末聚餐人多想提前预约"],
     },
     "retail": {
@@ -32,7 +32,7 @@ DEMO = {
             {"name": "爆款秒杀组合", "category": "组合", "price": 199, "efficacy": ["秒杀", "引流"], "segments": ["价格敏感"], "seasons": ["大促"]},
             {"name": "换季套装", "category": "套装", "price": 699, "efficacy": ["换季", "套装"], "segments": ["家庭"], "seasons": ["换季"]},
         ],
-        "knowledge": "零售私域运营要点：新品首发预热、会员积分兑换、秒杀裂变、搭配组合提升客单。",
+        "knowledge": "零售消费者运营要点：新品首发预热、会员积分兑换、秒杀裂变、搭配组合提升客单。",
         "signals": ["顾客问夏季新品什么时候上", "老会员积分怎么兑换", "秒杀活动还有名额吗"],
     },
     "education": {
@@ -42,7 +42,7 @@ DEMO = {
             {"name": "续费优惠卡", "category": "会员卡", "price": 0, "efficacy": ["续费", "优惠"], "segments": ["老学员"], "seasons": ["续班季"]},
             {"name": "家长裂变礼包", "category": "活动", "price": 0, "efficacy": ["裂变", "转介绍"], "segments": ["家长"], "seasons": ["全年"]},
         ],
-        "knowledge": "教育私域运营要点：试听课转化、家长转介绍裂变、续费节点提醒、学习成果晒单。",
+        "knowledge": "教育消费者运营要点：试听课转化、家长转介绍裂变、续费节点提醒、学习成果晒单。",
         "signals": ["家长想约试听课", "学员课程快到期问续费", "家长群想了解转介绍奖励"],
     },
     "pet": {
@@ -52,7 +52,7 @@ DEMO = {
             {"name": "寄养套餐", "category": "宠物服务", "price": 599, "efficacy": ["寄养", "节假日"], "segments": ["出差人群"], "seasons": ["节假日"]},
             {"name": "宠物生日礼盒", "category": "礼盒", "price": 159, "efficacy": ["生日", "仪式感"], "segments": ["养宠家庭"], "seasons": ["生日"]},
         ],
-        "knowledge": "宠物私域运营要点：洗护服务复购、主粮订阅制、节假日寄养预约、宠物生日关怀。",
+        "knowledge": "宠物消费者运营要点：洗护服务复购、主粮订阅制、节假日寄养预约、宠物生日关怀。",
         "signals": ["宠物主粮快吃完了问有没有会员价", "想给猫预约洗澡", "节假日想寄养宠物"],
     },
     "health": {
@@ -62,7 +62,7 @@ DEMO = {
             {"name": "检测服务卡", "category": "服务", "price": 299, "efficacy": ["检测", "健康"], "segments": ["关注健康"], "seasons": ["全年"]},
             {"name": "会员调理卡", "category": "会员卡", "price": 999, "efficacy": ["调理", "复购"], "segments": ["会员"], "seasons": ["全年"]},
         ],
-        "knowledge": "大健康私域运营要点：健康管理订阅、滋补礼盒节庆营销、检测报告解读、会员调理回访。",
+        "knowledge": "大健康消费者运营要点：健康管理订阅、滋补礼盒节庆营销、检测报告解读、会员调理回访。",
         "signals": ["想了解健康管理套餐", "过节想给父母买滋补品", "检测报告想找专业解读"],
     },
 }
@@ -116,7 +116,7 @@ def main() -> None:
             if exists_doc is None:
                 knowledge.ingest(
                     tenant_id,
-                    f"{industry.name}私域运营知识库.txt",
+                    f"{industry.name}消费者运营知识库.txt",
                     data["knowledge"],
                     "txt",
                     len(data["knowledge"].encode("utf-8")),

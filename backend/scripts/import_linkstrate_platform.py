@@ -1,4 +1,4 @@
-"""迁移 Linkstrate运营中台 data.db 全部业务数据到私域运营中台。"""
+"""迁移 Linkstrate运营中台 data.db 全部业务数据到消费者运营中台。"""
 
 from __future__ import annotations
 

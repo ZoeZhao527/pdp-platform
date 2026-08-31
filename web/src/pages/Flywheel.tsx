@@ -1541,7 +1541,7 @@ function ReportsTab() {
                         className="btn small"
                         onClick={async () => setFullscreen(await api.getReport(report.id))}
                       >
-                        全屏演示
+                        全屏查看
                       </button>
                     </div>
                   </td>
