@@ -40,6 +40,21 @@ class OpenAICompatibleClient:
         try:
             from openai import OpenAI
 
+            # Normalize messages: some providers (DeepSeek, Qwen) don't
+            # support content-as-list (vision API format).  Flatten to string.
+            norm_messages = []
+            for m in messages:
+                c = m.get("content")
+                if isinstance(c, list):
+                    parts = []
+                    for item in c:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            parts.append(item.get("text", ""))
+                        elif isinstance(item, str):
+                            parts.append(item)
+                    c = "\n".join(parts)
+                norm_messages.append({"role": m.get("role", "user"), "content": c or ""})
+
             client = OpenAI(
                 base_url=self.base_url,
                 api_key=self.api_key or "ollama",
@@ -48,7 +63,7 @@ class OpenAICompatibleClient:
             )
             kwargs: dict[str, Any] = dict(
                 model=self.model,
-                messages=messages,
+                messages=norm_messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
             )

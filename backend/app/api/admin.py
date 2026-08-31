@@ -247,6 +247,15 @@ LLM_PRESETS = [
         "description": "性价比高，适合策略生成和话术创作",
     },
     {
+        "name": "DeepSeek V4 Pro (阿里云百炼)",
+        "provider": "deepseek",
+        "model": "deepseek-v4-pro-0813",
+        "base_url": "",
+        "complexity": "complex",
+        "cost_per_million": 2.0,
+        "description": "阿里云百炼部署，需填写专属 base_url 和 api_key",
+    },
+    {
         "name": "Qwen 2.5 (本地 Ollama)",
         "provider": "ollama",
         "model": "qwen2.5:7b",
@@ -334,6 +343,20 @@ def update_llm_model(model_id: str, payload: LLMModelIn, runtime: Runtime = Depe
     row.enabled = payload.enabled
     runtime.db.commit()
     return {"id": row.id, "updated": True}
+
+
+@router.delete("/llm/models/{model_id}")
+def delete_llm_model(model_id: str, runtime: Runtime = Depends(get_runtime)) -> dict:
+    row = (
+        runtime.db.query(LLMModelConfig)
+        .filter(LLMModelConfig.id == model_id, LLMModelConfig.tenant_id == runtime.tenant_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(404, "模型不存在")
+    runtime.db.delete(row)
+    runtime.db.commit()
+    return {"id": model_id, "deleted": True}
 
 
 @router.get("/llm/usage")
