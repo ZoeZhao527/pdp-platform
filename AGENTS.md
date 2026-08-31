@@ -20,6 +20,52 @@
    git add -A && git commit -m "<改动说明>"
    ```
 
+## Git 工作流规范
+
+本项目单人开发 + AI 协作，不搞 feature 分支 / PR / code review 那套，主分支（main/master）直接开发。但以下纪律必须守：
+
+### 1. 改代码前先更新
+开始任何修改前，先拉取最新，避免和远端或本地其他会话的改动冲突：
+```bash
+git pull --rebase    # 有远程时；没远程就跳过
+git status           # 确认工作区干净再动手
+```
+工作区有未提交改动时，先问用户：提交、stash、还是丢弃，**不要**自作主张覆盖。
+
+### 2. 小步提交
+AI 每完成一个独立功能/修复就提交一次，**禁止**攒一大坨改动一次提交。一个 commit 只做一件事，便于回滚定位。
+
+### 3. 提交信息规范
+- 中文，动宾结构，一句话说清改了啥
+- 格式：`<类型>: <说明>`，类型用 `feat/fix/refactor/docs/chore/test`
+- 示例：`feat: 订单列表加分页` / `fix: 飞书卡片下发空指针` / `refactor: 抽取 LLM 调用重试逻辑`
+- 禁止：`update` / `修改` / `改动` 这种看不出内容的信息
+
+### 4. 禁止自动 push
+单人本地开发，push 到远程是可选项。AI **不得**自动 `git push`，必须用户明确说"推送/push"才执行。
+
+### 5. 冲突必须停下问
+`pull --rebase` 或 `merge` 遇到冲突，AI **禁止**自行选择一边覆盖。必须停下来告诉用户：哪几个文件冲突、冲突点是什么、请用户定夺。
+
+### 6. 危险操作必须先问
+以下操作 AI **不得**自作主张执行，必须先问用户并说明后果：
+- `git reset --hard` / `git checkout .` / `git restore .` —— 丢弃未提交改动
+- `git clean -fd` —— 删除未跟踪文件
+- `git push --force` / `--force-with-lease` —— 强推覆盖远端
+- `git branch -D` —— 删分支
+- 任何 `git rebase` 已提交的 commit
+
+### 7. 敏感文件绝不手动 add
+`.env` / `pdp.db` / `logs/` / `backups/` 已在 `.gitignore`。AI **禁止**用 `git add -f` 强加这些文件，也**禁止** `git add .env` 这类显式添加。统一用 `git add -A`（会自动遵守 .gitignore）或 `git add <具体源码文件>`。
+
+### 8. 部署前的 git 检查
+部署前 AI 必须确认：
+```bash
+git status --short    # 必须是 clean（nothing to commit）
+git log -1 --oneline  # 记下 commit hash，部署脚本会写进 deploy.log
+```
+工作区不干净就先提交或问用户，**不要**带未提交改动部署。
+
 ## 不可触碰
 
 - `backend/pdp.db` —— 运行时数据库，绝不入库、绝不覆盖（部署脚本已自动备份）
