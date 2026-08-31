@@ -159,6 +159,37 @@ class FeishuClient:
             "detail": data.get("msg", ""),
         }
 
+    def send_card(self, header_title: str, elements: list, header_template: str = "blue") -> dict[str, Any]:
+        """发送飞书互动卡片消息，支持标题/分栏/分隔线/富文本。"""
+        if self.mock:
+            logger.info("[飞书 mock] 发送卡片: %s", header_title)
+            return {"ok": True, "message_id": "mock", "detail": "mock 模式，未真实发送"}
+        card = {
+            "header": {
+                "title": {"tag": "plain_text", "content": header_title},
+                "template": header_template,
+            },
+            "elements": elements,
+        }
+        resp = httpx.post(
+            f"{FEISHU_BASE}/open-apis/im/v1/messages",
+            params={"receive_id_type": "chat_id"},
+            headers=self._auth_headers(),
+            json={
+                "receive_id": self.chat_id,
+                "msg_type": "interactive",
+                "content": json.dumps(card),
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return {
+            "ok": data.get("code", 0) == 0,
+            "message_id": data.get("data", {}).get("message_id", ""),
+            "detail": data.get("msg", ""),
+        }
+
 
 _client_cache: dict[str, FeishuClient] = {}
 

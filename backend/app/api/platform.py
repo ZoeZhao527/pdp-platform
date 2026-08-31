@@ -12,6 +12,7 @@ import re
 import json
 import importlib.util
 from importlib.machinery import SourcelessFileLoader
+import unicodedata
 
 _PYC = os.path.join(os.path.dirname(__file__), "__pycache__", "platform_orig.cpython-312.pyc")
 
@@ -240,6 +241,197 @@ _orig._llm_generate_asset = _patched_llm_generate_asset
 # ---------------------------------------------------------------------------
 # Wrap _generate_instruction_impl: inject care item context + clean product_mix
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# KB context injection: search knowledge base for care items, sales scripts,
+# and activity patterns relevant to the instruction, inject as LLM context.
+# ---------------------------------------------------------------------------
+_SEASON_KEYWORDS = {
+    '春': ['春季', '春天', '换季', '抗敏', '舒缓', '初春'],
+    '夏': ['夏季', '夏天', '防晒', '晒后', '控油', '美白', '清凉'],
+    '秋': ['秋季', '秋天', '换季', '补水', '保湿', '修护', '干燥', '初秋'],
+    '冬': ['冬季', '冬天', '滋养', '润燥', '保暖', '深层滋润'],
+}
+
+
+def _build_kb_context_injection(content, db, tenant_id):
+    """Search KB for relevant care items, sales scripts, and activity patterns.
+    Returns a context string to append to instruction content, or '' if none."""
+    if not content or not tenant_id:
+        return ''
+    from sqlalchemy import text as _sql_text
+    lines = ['\n\n【知识库参考上下文 - 基于品牌真实资料生成内容，不要泛泛而谈】']
+
+    # --- Inject current date + season so LLM matches the right season ---
+    from datetime import datetime as _dt
+    _now = _dt.now()
+    _month = _now.month
+    if _month in (2, 3):
+        _season = '初春'
+    elif _month in (4, 5):
+        _season = '春末夏初'
+    elif _month in (6, 7):
+        _season = '夏季'
+    elif _month == 8:
+        _season = '夏末秋初'
+    elif _month in (9, 10):
+        _season = '秋季'
+    elif _month == 11:
+        _season = '秋末冬初'
+    else:
+        _season = '冬季'
+    lines.append(f'【当前时间】{_now.strftime("%Y年%m月%d日")} {_season}（所有活动策划、内容排期必须匹配当前季节 {_season}，禁止使用其他季节）')
+
+    # --- Inject brand sales logic (target/no-touch segments) ---
+    try:
+        _trow = db.execute(_sql_text("SELECT config_json FROM tenants WHERE id = :tid"), {"tid": tenant_id}).fetchone()
+        if _trow and _trow[0]:
+            _tcfg = json.loads(_trow[0])
+            _sl = _tcfg.get("sales_logic")
+            if _sl:
+                _rule = _sl.get("rule", "")
+                _targets = ", ".join(_sl.get("target_segments", []))
+                _notouch = ", ".join(_sl.get("no_touch_segments", []))
+                lines.append(f"\n【品牌销售逻辑】{_rule}。目标人群：{_targets}。不触达人群：{_notouch}。所有销售话术、分层打法、朋友圈内容只针对目标人群，不对不触达人群做任何销售动作。")
+    except Exception:
+        pass
+
+    def _norm(t):
+        if not t:
+            return ''
+        return unicodedata.normalize('NFKC', t).replace('\u3000', ' ').replace('\r', '')
+
+    def _sanitize_kw(kw):
+        """Escape single quotes for safe SQL LIKE interpolation."""
+        return kw.replace("'", "''").replace("%", "\\%").replace("_", "\\_")
+
+    # 1. Extract keywords from instruction content
+    keywords = set()
+    for season, kws in _SEASON_KEYWORDS.items():
+        if any(kw in content for kw in [season] + kws):
+            keywords.update(kws)
+    # Card type keywords
+    for card_kw in ['三次卡', '四次卡', '六次卡', '体验卡', '疗程卡', '储值卡', '单次', '月卡']:
+        if card_kw in content:
+            keywords.add(card_kw)
+    # Action / care-area keywords
+    for act_kw in ['补水', '修护', '美白', '抗衰', '祛痘', '舒缓', '排毒', '塑形', '肩颈', '眼部',
+                   '面部', '身体', '清洁', '保湿', '紧致', '淡斑', '控油', '滋养', '抗敏',
+                   '防晒', '晒后', '头部', '背部', '腿部', '手部', '排毒', '排湿', '通络']:
+        if act_kw in content:
+            keywords.add(act_kw)
+    # Extract 2-4 char Chinese terms from instruction text for targeted search
+    _stopwords = {'不要', '可以', '需要', '一个', '这个', '那个', '什么', '怎么',
+                  '我们', '你们', '他们', '她们', '自己', '知道', '明白', '理解',
+                  '但是', '因为', '所以', '如果', '虽然', '不过', '然后', '现在',
+                  '已经', '还是', '或者', '应该', '可能', '一定', '必须', '重要',
+                  '生成', '内容', '参考', '围绕', '给我', '给我', '帮忙', '帮我'}
+    for term in re.findall(r'[\u4e00-\u9fff]{2,4}', content):
+        if term not in _stopwords:
+            keywords.add(term)
+    if not keywords:
+        keywords = {'补水', '修护', '护理'}
+
+    # Limit to 8 keywords to keep SQL manageable
+    kw_list = sorted(keywords, key=lambda k: len(k), reverse=True)[:8]
+    def _kw_or(alias='kc.content'):
+        """Build OR clause from keyword list for SQL LIKE."""
+        if not kw_list:
+            return '1=1'
+        return ' OR '.join(f"{alias} LIKE '%{_sanitize_kw(k)}%'" for k in kw_list)
+
+    # 2. Search KB for care items with pricing — keyword-filtered, fallback to broad
+    try:
+        kw_cond = _kw_or()
+        care_chunks = db.execute(_sql_text(
+            f"SELECT content FROM knowledge_chunks kc "
+            f"JOIN knowledge_docs kd ON kc.doc_id = kd.id "
+            f"WHERE kd.tenant_id = :tid AND kc.content LIKE '%门市价%' "
+            f"AND ({kw_cond}) "
+            f"ORDER BY LENGTH(kc.content) DESC LIMIT 5"
+        ), {"tid": tenant_id}).fetchall()
+        if not care_chunks:
+            care_chunks = db.execute(_sql_text(
+            "SELECT content FROM knowledge_chunks kc "
+            "JOIN knowledge_docs kd ON kc.doc_id = kd.id "
+            "WHERE kd.tenant_id = :tid AND kc.content LIKE '%门市价%' "
+            "ORDER BY LENGTH(kc.content) DESC LIMIT 5"
+            ), {"tid": tenant_id}).fetchall()
+        if care_chunks:
+            lines.append('\n--- 品牌护理项目参考（含门市价，用于组卡和话术参考）---')
+            for ch in care_chunks[:3]:
+                txt = _norm(ch[0])[:500] if ch[0] else ''
+                lines.append(txt)
+    except Exception:
+        pass
+
+    # 3. Search KB for sales script examples — keyword-filtered, fallback to broad
+    try:
+        kw_cond2 = _kw_or()
+        script_chunks = db.execute(_sql_text(
+            f"SELECT content FROM knowledge_chunks kc "
+            f"JOIN knowledge_docs kd ON kc.doc_id = kd.id "
+            f"WHERE kd.tenant_id = :tid AND "
+            f"(kc.content LIKE '%话术%' OR kc.content LIKE '%朋友圈%' OR kc.content LIKE '%1v1%' OR kc.content LIKE '%销售%') "
+            f"AND ({kw_cond2}) "
+            f"ORDER BY LENGTH(kc.content) DESC LIMIT 3"
+        ), {"tid": tenant_id}).fetchall()
+        if not script_chunks:
+            script_chunks = db.execute(_sql_text(
+            "SELECT content FROM knowledge_chunks kc "
+            "JOIN knowledge_docs kd ON kc.doc_id = kd.id "
+            "WHERE kd.tenant_id = :tid AND "
+            "(kc.content LIKE '%话术%' OR kc.content LIKE '%朋友圈%' OR kc.content LIKE '%1v1%' OR kc.content LIKE '%销售%') "
+            "ORDER BY LENGTH(kc.content) DESC LIMIT 3"
+            ), {"tid": tenant_id}).fetchall()
+        if script_chunks:
+            lines.append('\n--- 品牌话术参考（请参考风格和结构，但不要照搬）---')
+            for ch in script_chunks[:2]:
+                txt = _norm(ch[0])[:500] if ch[0] else ''
+                lines.append(txt)
+    except Exception:
+        pass
+
+    # 4. Search KB for activity pattern examples — keyword-filtered, fallback to broad
+    try:
+        kw_cond3 = _kw_or()
+        act_chunks = db.execute(_sql_text(
+            f"SELECT content FROM knowledge_chunks kc "
+            f"JOIN knowledge_docs kd ON kc.doc_id = kd.id "
+            f"WHERE kd.tenant_id = :tid AND "
+            f"(kc.content LIKE '%活动%' OR kc.content LIKE '%排期%' OR kc.content LIKE '%货盘%') "
+            f"AND ({kw_cond3}) "
+            f"ORDER BY LENGTH(kc.content) DESC LIMIT 3"
+        ), {"tid": tenant_id}).fetchall()
+        if not act_chunks:
+            act_chunks = db.execute(_sql_text(
+            "SELECT content FROM knowledge_chunks kc "
+            "JOIN knowledge_docs kd ON kc.doc_id = kd.id "
+            "WHERE kd.tenant_id = :tid AND "
+            "(kc.content LIKE '%活动%' OR kc.content LIKE '%排期%' OR kc.content LIKE '%货盘%') "
+            "ORDER BY LENGTH(kc.content) DESC LIMIT 3"
+            ), {"tid": tenant_id}).fetchall()
+        if act_chunks:
+            lines.append('\n--- 品牌过往活动参考（参考活动节奏和货盘结构）---')
+            for ch in act_chunks[:2]:
+                txt = _norm(ch[0])[:500] if ch[0] else ''
+                lines.append(txt)
+    except Exception:
+        pass
+
+    lines.append('\n--- 生成要求 ---')
+    lines.append('1. 活动规划要有具体的玩法机制（拼团几人几折、储值返利金额、秒杀时间和数量）')
+    lines.append('2. 货盘卡项的护理项目要参考上面品牌真实项目名和门市价')
+    lines.append('3. 1v1话术要结合具体护理项目功效，不要泛泛而谈')
+    lines.append('4. 朋友圈内容要多样：种草、科普、见证、活动、互动交替')
+    lines.append('5. 社群内容要有群内互动设计（打卡、抽奖、接龙等）')
+
+    result = '\n'.join(lines)
+    if len(result) < 50:
+        return ''
+    return _norm(result)[:2500]  # Cap at 2500 chars — enough for meaningful context
+
+
 _orig_generate_instruction_impl = _orig._generate_instruction_impl
 
 
@@ -250,6 +442,12 @@ def _patched_generate_instruction_impl(instruction_id, runtime):
     ).first()
 
     orig_content = None
+    kb_context = _build_kb_context_injection(instr.content if instr else '', runtime.db, runtime.tenant_id)
+    if kb_context and instr:
+        orig_content = instr.content
+        instr.content = instr.content + kb_context
+        runtime.db.commit()
+
     if instr and instr.campaign_brief_json:
         try:
             cb_raw = instr.campaign_brief_json
@@ -298,12 +496,30 @@ def _patched_generate_instruction_impl(instruction_id, runtime):
                 brand_lines.append(context_text)
 
             full_injection = '\n'.join(brand_lines)
-            orig_content = instr.content
+            if orig_content is None:
+                orig_content = instr.content
             instr.content = instr.content + full_injection
             runtime.db.commit()
 
     # --- CALL ORIGINAL GENERATION PIPELINE ---
-    result = _orig_generate_instruction_impl(instruction_id, runtime)
+    try:
+        result = _orig_generate_instruction_impl(instruction_id, runtime)
+    except Exception as gen_err:
+        import traceback as _tb
+        with open('/tmp/patch_debug.log', 'a') as _f:
+            _f.write(f"GEN ERROR {instruction_id}: {gen_err}\n{_tb.format_exc()}\n")
+        if orig_content is not None:
+            try:
+                instr_e = runtime.db.query(_orig.Instruction).filter(
+                    _orig.Instruction.id == instruction_id
+                ).first()
+                if instr_e:
+                    instr_e.content = orig_content
+                    instr_e.status = '生成失败'
+                    runtime.db.commit()
+            except Exception:
+                pass
+        raise
 
     # --- RESTORE original instruction content ---
     if orig_content is not None:
@@ -317,6 +533,19 @@ def _patched_generate_instruction_impl(instruction_id, runtime):
         except Exception:
             pass
 
+    # --- FAILURE DETECTION: if generation returned empty asset, mark as failed ---
+    try:
+        if result is None or not isinstance(result, dict) or not result.get("asset"):
+            instr_fail = runtime.db.query(_orig.Instruction).filter(
+                _orig.Instruction.id == instruction_id
+            ).first()
+            if instr_fail and instr_fail.status == "\u751f\u6210\u4e2d":
+                instr_fail.status = "\u751f\u6210\u5931\u8d25"
+                runtime.db.commit()
+            return result if result else {}
+    except Exception:
+        pass
+
     # --- POST-GENERATION: clean up product_mix ---
     try:
         if not isinstance(result, dict):
@@ -326,9 +555,54 @@ def _patched_generate_instruction_impl(instruction_id, runtime):
             return result
 
         # Re-read instruction for campaign_brief
+        # --- GLOBAL CLEANUP: applied to ALL asset packs ---
+        _TEXT_FIXES = {
+            '多莓水动力': '多重水动力',
+            '多莓': '多重',
+        }
+        def _fix_text(obj):
+            if isinstance(obj, str):
+                for old, new in _TEXT_FIXES.items():
+                    obj = obj.replace(old, new)
+                return obj
+            elif isinstance(obj, dict):
+                return {k: _fix_text(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [_fix_text(v) for v in obj]
+            return obj
+        try:
+            asset = _fix_text(asset)
+            result['asset'] = asset
+        except Exception:
+            pass
+
+        # Clean up product_mix: only show cards, not individual care items
+        cs_existing = asset.get('card_structure')
+        if isinstance(cs_existing, dict):
+            cs_cards = cs_existing.get('cards', [])
+            if isinstance(cs_cards, list) and len(cs_cards) > 0:
+                # product_mix should mirror card_structure.cards, not show 26 individual items
+                pm = asset.get('product_mix')
+                if isinstance(pm, list) and len(pm) > len(cs_cards):
+                    asset['product_mix'] = cs_cards
+
+        # Persist global cleanup to instruction.asset_json
+        try:
+            instr_global = runtime.db.query(_orig.Instruction).filter(
+                _orig.Instruction.id == instruction_id
+            ).first()
+            if instr_global:
+                instr_global.asset_json = asset
+                runtime.db.commit()
+        except Exception:
+            pass
+
+        # --- BRAND CARD CLEANUP: only when campaign_brief has cards ---
         instr3 = runtime.db.query(_orig.Instruction).filter(
             _orig.Instruction.id == instruction_id
         ).first()
+        with open('/tmp/patch_debug.log', 'a') as _dbg:
+            _dbg.write(f"BRAND_CLEANUP_START instr={instruction_id} cb_json={'yes' if instr3 and instr3.campaign_brief_json else 'no'}\n")
         if not instr3 or not instr3.campaign_brief_json:
             return result
 
@@ -381,6 +655,8 @@ def _patched_generate_instruction_impl(instruction_id, runtime):
 
         # Replace product_mix with ALL brand cards (no extra cards)
         asset['product_mix'] = clean_cards
+        with open('/tmp/patch_debug.log', 'a') as _dbg:
+            _dbg.write(f"BRAND_CLEANUP_BUILT clean_cards={len(clean_cards)} names={all_brand_names}\n")
 
         # Update card_structure: when brand cards are uploaded, wipe ALL
         # self-generated cards so the LLM's own 组卡 never leaks through.
@@ -422,8 +698,37 @@ def _patched_generate_instruction_impl(instruction_id, runtime):
                         if not t.get('products'):
                             t['products'] = all_brand_names
 
+        # Update sales_playbook to reference brand cards
+        sp = asset.get('sales_playbook')
+        if isinstance(sp, dict):
+            sp_sections = sp.get('sections', [])
+            if isinstance(sp_sections, list):
+                for sec in sp_sections:
+                    if isinstance(sec, dict) and not sec.get('products'):
+                        sec['products'] = all_brand_names
+            sp_obj = sp.get('objections', [])
+            if isinstance(sp_obj, list):
+                for obj in sp_obj:
+                    if isinstance(obj, dict):
+                        resp = obj.get('response', '')
+                        if resp and not any(bn in resp for bn in all_brand_names):
+                            obj['response'] = resp + f'\n（推荐：{", ".join(all_brand_names[:2])}）'
+
+        # Update content_schedule to reference brand cards in daily_content
+        csc = asset.get('content_schedule')
+        if isinstance(csc, dict):
+            daily = csc.get('daily_content', [])
+            if isinstance(daily, list):
+                for dc in daily:
+                    if isinstance(dc, dict):
+                        content = dc.get('content', '')
+                        if content and not any(bn in content for bn in all_brand_names):
+                            dc['content'] = content
+
         # Update DB: write cleaned asset to BOTH strategy_task and instruction
         task_id = result.get('task_id')
+        with open('/tmp/patch_debug.log', 'a') as _dbg:
+            _dbg.write(f"BRAND_CLEANUP_PERSIST task_id={task_id} pm_cards={len(asset.get('product_mix', [])) if isinstance(asset.get('product_mix'), list) else 'N/A'}\n")
         if task_id:
             task = runtime.db.query(_orig.StrategyTask).filter(
                 _orig.StrategyTask.id == task_id
@@ -439,10 +744,87 @@ def _patched_generate_instruction_impl(instruction_id, runtime):
             try:
                 instr3.asset_json = asset
                 runtime.db.commit()
+                with open('/tmp/patch_debug.log', 'a') as _dbg:
+                    _dbg.write(f"BRAND_CLEANUP_DONE persisted to instruction\n")
             except Exception:
+                import traceback as _tb2
+                with open('/tmp/patch_debug.log', 'a') as _dbg:
+                    _dbg.write(f"BRAND_CLEANUP_PERSIST_ERR: {_tb2.format_exc()}\n")
                 pass
 
         result['asset'] = asset
+
+        # --- POLLING RE-APPLY: the original bytecode (platform_orig.pyc)
+        # overwrites instruction.asset_json AFTER this function returns.
+        # Poll the DB every 2s for up to 30s; each time the asset has been
+        # overwritten back to self-generated cards, re-apply the clean version.
+        import threading as _threading_mod
+        _poll_asset = json.loads(json.dumps(asset, ensure_ascii=False))
+        _poll_result = json.loads(json.dumps(result, ensure_ascii=False))
+        _poll_task_id = task_id
+        _poll_brand_names = list(all_brand_names)
+        def _polling_brand_overwrite():
+            import time as _time_mod
+            import sqlite3 as _sqlite3
+            import json as _pjson
+            _db_path = 'pdp.db'
+            try:
+                _db_path = str(runtime.db.bind.engine.url.database)
+                if not _db_path or _db_path == 'None':
+                    _db_path = 'pdp.db'
+            except Exception:
+                pass
+            _clean_asset_str = _pjson.dumps(_poll_asset, ensure_ascii=False)
+            _clean_result_str = _pjson.dumps(_poll_result, ensure_ascii=False)
+            for _attempt in range(15):
+                _time_mod.sleep(2)
+                try:
+                    _conn = _sqlite3.connect(_db_path)
+                    _row = _conn.execute(
+                        "SELECT asset_json FROM instructions WHERE id = ?",
+                        (instruction_id,)
+                    ).fetchone()
+                    if _row and _row[0]:
+                        _cur = _pjson.loads(_row[0])
+                        _pm = _cur.get('product_mix', [])
+                        _needs_fix = False
+                        if isinstance(_pm, list):
+                            if len(_pm) != len(_poll_brand_names):
+                                _needs_fix = True
+                            else:
+                                for _card in _pm:
+                                    if isinstance(_card, dict):
+                                        _cn = _card.get('name', '') or _card.get('card_name', '')
+                                        if _cn not in _poll_brand_names:
+                                            _needs_fix = True
+                                            break
+                        if _needs_fix:
+                            _conn.execute(
+                                "UPDATE instructions SET asset_json = ? WHERE id = ?",
+                                (_clean_asset_str, instruction_id)
+                            )
+                            if _poll_task_id:
+                                _conn.execute(
+                                    "UPDATE strategy_tasks SET result_json = ? WHERE id = ?",
+                                    (_clean_result_str, _poll_task_id)
+                                )
+                            _conn.commit()
+                            with open('/tmp/patch_debug.log', 'a') as _dbg:
+                                _dbg.write(f"BRAND_POLL_FIX attempt={_attempt+1} instr={instruction_id} fixed\n")
+                        else:
+                            _conn.close()
+                            with open('/tmp/patch_debug.log', 'a') as _dbg:
+                                _dbg.write(f"BRAND_POLL_OK attempt={_attempt+1} instr={instruction_id} stable\n")
+                            break
+                    _conn.close()
+                except Exception as _de:
+                    import traceback as _dtb
+                    with open('/tmp/patch_debug.log', 'a') as _dbg:
+                        _dbg.write(f"BRAND_POLL_ERR attempt={_attempt+1}: {_de}\n{_dtb.format_exc()}\n")
+            else:
+                with open('/tmp/patch_debug.log', 'a') as _dbg:
+                    _dbg.write(f"BRAND_POLL_TIMEOUT instr={instruction_id} gave up\n")
+        _threading_mod.Thread(target=_polling_brand_overwrite, daemon=True).start()
 
     except Exception as e:
         import traceback
@@ -506,6 +888,7 @@ router.routes = [
 ]
 
 from fastapi import Depends
+from fastapi import HTTPException
 from app.auth import require_roles
 from app.api.deps import Runtime, get_runtime
 from app.models import Instruction
@@ -579,6 +962,66 @@ def chat_instruction(
     raw_cb = getattr(payload, "campaign_brief", None)
     cb = _normalize_campaign_brief(raw_cb) if raw_cb else None
 
+    # --- 3.0 Interactive: pre-generation clarification ---
+    _has_audience = bool(params.get("layers")) or any(
+        kw in msg for kw in [
+            "新客", "老客", "会员", "潜客", "体验客", "复购", "干皮",
+            "敏感肌", "油皮", "干性", "混合", "高潜", "沉睡", "新粉",
+        ]
+    )
+    _has_budget = bool(params.get("budget")) or bool(params.get("goal_value"))
+    _has_activity = bool(params.get("activity_type")) or bool(
+        cb and isinstance(cb, dict) and cb.get("cards")
+    )
+    _has_channels = bool(params.get("content_channels"))
+    _has_timeframe = any(
+        kw in msg for kw in [
+            "本周", "本月", "下周", "周", "月", "季", "秋", "春", "夏", "冬",
+            "8月", "9月", "10月", "11月", "12月", "1月", "2月", "3月", "4月",
+            "5月", "6月", "7月", "即将", "马上",
+        ]
+    )
+
+    _missing_dims = []
+    if not _has_audience:
+        _missing_dims.append({
+            "dimension": "audience",
+            "question": "这次运营针对哪类客户？",
+            "examples": ["新客拉新", "老客复购", "会员激活", "体验客转化"],
+        })
+    if not _has_budget:
+        _missing_dims.append({
+            "dimension": "budget",
+            "question": "预算或目标是什么？",
+            "examples": ["预算5000元", "GMV增长20%", "转化率15%"],
+        })
+    if not _has_activity:
+        _missing_dims.append({
+            "dimension": "activity",
+            "question": "主推什么产品或活动方向？",
+            "examples": ["推广XX卡项", "秋季补水活动", "秒杀裂变"],
+        })
+    if not _has_channels:
+        _missing_dims.append({
+            "dimension": "channels",
+            "question": "主要通过哪些渠道触达？",
+            "examples": ["朋友圈+1v1", "社群+公众号", "全渠道"],
+        })
+    if not _has_timeframe:
+        _missing_dims.append({
+            "dimension": "timeframe",
+            "question": "执行周期是什么时候？",
+            "examples": ["本周", "本月", "秋季9月"],
+        })
+
+    if len(_missing_dims) >= 2:
+        return {
+            "needs_clarification": True,
+            "title": title,
+            "questions": _missing_dims[:3],
+            "parsed_params": params,
+        }
+
     instruction = Instruction(
         tenant_id=runtime.tenant_id,
         industry_id=runtime.industry_id,
@@ -591,6 +1034,9 @@ def chat_instruction(
     runtime.db.add(instruction)
     runtime.db.commit()
     runtime.db.refresh(instruction)
+    _log_run(runtime.db, runtime.tenant_id, "instruction", "created",
+              instruction_id=instruction.id, detail=f"指令: {title}",
+              operator=_auth.get("user", "运营"))
     return {
         "instruction_id": instruction.id,
         "title": title,
@@ -703,5 +1149,461 @@ router.add_api_route(
     "/instructions",
     list_instruction_safe,
     methods=["GET"],
+    response_model=None,
+)
+
+
+# ---------------------------------------------------------------------------
+# 3.0 P1: Interactive revision — operator reviews asset, sends feedback, LLM revises
+# ---------------------------------------------------------------------------
+from pydantic import BaseModel as _BM
+
+
+class ReviseInstructionIn(_BM):
+    message: str
+
+
+def _log_run(db, tenant_id: str, module: str, event: str,
+             instruction_id: str | None = None, detail: str = "",
+             operator: str = "系统", extra: dict | None = None):
+    """Write a system_runlog row for audit trail / strategy iteration."""
+    try:
+        from app.models import SystemRunlog
+        log = SystemRunlog(
+            tenant_id=tenant_id,
+            instruction_id=instruction_id,
+            module=module,
+            event=event,
+            detail=detail,
+            operator=operator,
+            extra_json=extra,
+            name=f"{module}.{event}",
+        )
+        db.add(log)
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def revise_instruction(
+    instruction_id: str,
+    payload: ReviseInstructionIn,
+    runtime: Runtime = Depends(get_runtime),
+    _auth: dict = Depends(require_roles("admin", "operator")),
+):
+    """Revise an existing asset package based on operator feedback.
+
+    Flow: operator reviews asset -> sends modification note -> LLM revises
+    the relevant sections -> updated asset replaces the old one.  The
+    conversation context (original instruction + feedback) is preserved.
+    """
+    import json as _json
+
+    instr = runtime.db.query(Instruction).filter(
+        Instruction.id == instruction_id,
+        Instruction.tenant_id == runtime.tenant_id,
+    ).first()
+    if not instr:
+        raise HTTPException(status_code=404, detail="指令不存在")
+
+    current_asset = instr.asset_json
+    if not current_asset:
+        raise HTTPException(status_code=400, detail="资产包尚未生成，无法修改")
+
+    asset_str = _json.dumps(current_asset, ensure_ascii=False, indent=2) if isinstance(current_asset, dict) else str(current_asset)
+    feedback = payload.message.strip()
+
+    sys_prompt = (
+        "你是消费者运营策略修订专家。运营人员审阅了已生成的策略资产包，提出修改意见。\n"
+        "请根据修改意见，对资产包做增量调整，保持未提及部分不变。\n"
+        "输出要求：返回完整的 JSON 资产包，结构与输入完全一致，不要输出任何解释文字。\n"
+        "字段说明：activity_plan(活动策划), card_structure(货盘卡项), "
+        "sales_playbook(销售话术), script_templates(话术模板), "
+        "content_schedule(内容排期), content_materials(内容素材), "
+        "activity_details(活动详情), audience(目标人群), kpi_targets(KPI), constraints(约束)。"
+    )
+    user_msg = (
+        f"【原始指令】{instr.content}\n\n"
+        f"【当前资产包 JSON】\n{asset_str}\n\n"
+        f"【运营修改意见】{feedback}\n\n"
+        "请输出修订后的完整 JSON 资产包，保持结构一致。"
+    )
+
+    try:
+        result = runtime.llm_router.complete(
+            tenant_id=runtime.tenant_id,
+            messages=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            complexity="complex",
+            max_tokens=4096,
+            response_format={"type": "json_object"},
+        )
+    except Exception as exc:
+        _log_run(runtime.db, runtime.tenant_id, "instruction", "revise_failed",
+                  instruction_id=instruction_id, detail=str(exc),
+                  operator=_auth.get("user", "运营"))
+        raise HTTPException(status_code=502, detail=f"LLM 修订失败: {exc}")
+
+    raw = result.content.strip()
+    # Strip code fences if present
+    if raw.startswith("```"):
+        lines = raw.split("\n", 1)
+        raw = lines[1] if len(lines) > 1 else raw[3:]
+    if raw.endswith("```"):
+        raw = raw[:-3].strip()
+
+    try:
+        revised = _json.loads(raw)
+    except _json.JSONDecodeError:
+        # Try to extract JSON block
+        import re as _re2
+        m = _re2.search(r'\{[\s\S]*\}', raw)
+        if m:
+            revised = _json.loads(m.group())
+        else:
+            _log_run(runtime.db, runtime.tenant_id, "instruction", "revise_parse_failed",
+                      instruction_id=instruction_id, detail="LLM output not valid JSON",
+                      operator=_auth.get("user", "运营"))
+            raise HTTPException(status_code=502, detail="LLM 返回格式异常，无法解析为 JSON")
+
+    instr.asset_json = revised
+    instr.status = "已产出"  # keep at "已产出" so operator can re-approve
+    runtime.db.commit()
+
+    _log_run(runtime.db, runtime.tenant_id, "instruction", "revised",
+              instruction_id=instruction_id, detail=f"修改意见: {feedback[:200]}",
+              operator=_auth.get("user", "运营"),
+              extra={"feedback": feedback})
+
+    return {
+        "instruction_id": instruction_id,
+        "status": instr.status,
+        "asset": revised,
+        "revision_note": "资产包已根据修改意见更新，请重新审阅后批准或继续修改",
+    }
+
+
+router.add_api_route(
+    "/instructions/{instruction_id}/revise",
+    revise_instruction,
+    methods=["POST"],
+    response_model=None,
+)
+
+
+# ---------------------------------------------------------------------------
+# 3.0 P3: System runlog endpoints
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# 3.0+: Wrap approve endpoint to add runlog logging
+# ---------------------------------------------------------------------------
+_APPROVE_PATHS = set()
+for _r in list(router.routes):
+    _p = getattr(_r, "path", "")
+    if "approve" in _p and hasattr(_r, "methods") and "POST" in _r.methods:
+        _APPROVE_PATHS.add(_p)
+        _orig_approve = _r.endpoint
+        break
+
+if _APPROVE_PATHS:
+    router.routes = [
+        r for r in router.routes
+        if not (hasattr(r, "path") and r.path in _APPROVE_PATHS
+                and hasattr(r, "methods") and "POST" in r.methods)
+    ]
+
+    def _wrapped_approve(
+        instruction_id: str,
+        runtime: Runtime = Depends(get_runtime),
+        _auth: dict = Depends(require_roles("admin", "operator")),
+    ):
+        """Approve instruction, decompose into tasks, materialize plan todos, log."""
+        result = _orig_approve(instruction_id, runtime, _auth)
+        _log_run(
+            runtime.db,
+            runtime.tenant_id,
+            "instruction",
+            "approved",
+            instruction_id=instruction_id,
+            detail=f"批准: {result.get('status', '')}, tasks={result.get('tasks', 0)}, todos={result.get('todo_count', 0)}",
+            operator=_auth.get("user", "运营"),
+        )
+        # Ensure plan todos are materialized
+        try:
+            from app.orchestration.executor import materialize_plan_todos
+            instr = runtime.db.query(Instruction).filter(
+                Instruction.id == instruction_id
+            ).first()
+            if instr and instr.status == "已批准":
+                todo_count = materialize_plan_todos(runtime.db, instr)
+                if todo_count:
+                    result["todo_count"] = todo_count
+        except Exception:
+            pass
+        return result
+
+    for _p in _APPROVE_PATHS:
+        if "/api/v1" in _p:
+            _reg_path = _p.replace("/api/v1/platform", "")
+        else:
+            _reg_path = _p
+        router.add_api_route(
+            _reg_path,
+            _wrapped_approve,
+            methods=["POST"],
+            response_model=None,
+        )
+
+def list_runlogs(
+    runtime: Runtime = Depends(get_runtime),
+    _auth: dict = Depends(require_roles("admin", "operator", "viewer")),
+    module: str | None = None,
+    instruction_id: str | None = None,
+    limit: int = 200,
+):
+    """List system run logs, filterable by module / instruction / time."""
+    from app.models import SystemRunlog
+    q = runtime.db.query(SystemRunlog).filter(
+        SystemRunlog.tenant_id == runtime.tenant_id
+    )
+    if module:
+        q = q.filter(SystemRunlog.module == module)
+    if instruction_id:
+        q = q.filter(SystemRunlog.instruction_id == instruction_id)
+    rows = q.order_by(SystemRunlog.created_at.desc()).limit(min(limit, 500)).all()
+    return [{
+        "id": r.id,
+        "instruction_id": r.instruction_id,
+        "module": r.module,
+        "event": r.event,
+        "detail": r.detail,
+        "operator": r.operator,
+        "extra": r.extra_json,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows]
+
+
+router.add_api_route(
+    "/runlogs",
+    list_runlogs,
+     methods=["GET"],
+     response_model=None,
+)
+
+
+# ---------------------------------------------------------------------------
+# 3.0: Send execution task directly to Feishu group
+# ---------------------------------------------------------------------------
+
+def send_todo_to_feishu(
+    todo_id: str,
+    runtime: "Runtime" = Depends(get_runtime),
+    _auth: dict = Depends(require_roles("admin", "operator")),
+):
+    """Send a single execution task's content to the tenant's Feishu group."""
+    from app.integrations.feishu import get_feishu_client
+    from app.models import StrategyTask, Tenant, Instruction
+
+    task = runtime.db.query(StrategyTask).filter(
+        StrategyTask.id == todo_id,
+        StrategyTask.tenant_id == runtime.tenant_id,
+    ).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    # --- Fetch brand name and instruction title for context ---
+    brand_name = ""
+    instr_title = ""
+    if task.tenant_id:
+        _tenant = runtime.db.query(Tenant).filter(Tenant.id == task.tenant_id).first()
+        if _tenant:
+            brand_name = _tenant.name or ""
+    if task.instruction_id:
+        _instr = runtime.db.query(Instruction).filter(Instruction.id == task.instruction_id).first()
+        if _instr:
+            instr_title = _instr.title or ""
+
+    # --- Channel to color/icon mapping ---
+    ch_raw = (task.channel or "通用").strip()
+    _CH_META = {
+        "朋友圈": {"color": "green", "icon": "📸"},
+        "社群": {"color": "purple", "icon": "💬"},
+        "1v1": {"color": "blue", "icon": "🎯"},
+        "私聊": {"color": "blue", "icon": "🎯"},
+        "货盘": {"color": "orange", "icon": "🛒"},
+        "卡项": {"color": "orange", "icon": "🛒"},
+        "活动": {"color": "violet", "icon": "🎉"},
+        "公众号": {"color": "turquoise", "icon": "📰"},
+        "短信": {"color": "grey", "icon": "✉️"},
+        "通用": {"color": "blue", "icon": "📋"},
+    }
+    _cm = _CH_META.get(ch_raw, _CH_META.get(ch_raw.lower(), _CH_META["通用"]))
+    ch_display = f"{_cm['icon']} {ch_raw}"
+    header_color = _cm["color"]
+
+    # --- Priority indicator based on due_at ---
+    priority_label = ""
+    if task.due_at:
+        try:
+            from datetime import datetime, date as _date
+            _ds = str(task.due_at).strip()[:19]
+            _dd = None
+            for _fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y-%m-%d %H:%M", "%Y年%m月%d日"):
+                try:
+                    _dd = datetime.strptime(_ds[:len(_fmt)], _fmt).date()
+                    break
+                except ValueError:
+                    continue
+            if _dd:
+                _days = (_dd - _date.today()).days
+                if _days < 0:
+                    priority_label = "🔴 已逾期"
+                elif _days == 0:
+                    priority_label = "🟡 今日截止"
+                elif _days <= 2:
+                    priority_label = f"🟠 紧急（{_days}天内）"
+                else:
+                    priority_label = "🟢 常规"
+        except Exception:
+            pass
+
+    # --- Header title: brand · instruction · channel ---
+    _hp = []
+    if brand_name:
+        _hp.append(brand_name)
+    if instr_title:
+        _hp.append(instr_title if len(instr_title) <= 20 else instr_title[:18] + "...")
+    _hp.append(ch_raw)
+    header_title = " · ".join(_hp) if _hp else "策略任务"
+
+    # --- Parse script into structured sections ---
+    def _parse_sections(text):
+        if not text:
+            return []
+        text = text.strip()
+        import re
+        _pat = re.compile(r'^(?:【([^】]+)】|([^\n:：]{2,12})[：:])\s*\n?', re.MULTILINE)
+        sections = []
+        last_end = 0
+        last_hdr = None
+        for m in _pat.finditer(text):
+            if m.start() > last_end and last_hdr is not None:
+                _c = text[last_end:m.start()].strip()
+                if _c:
+                    sections.append({"header": last_hdr, "content": _c})
+            last_hdr = (m.group(1) or m.group(2)).strip()
+            last_end = m.end()
+        if last_hdr is not None and last_end < len(text):
+            _r = text[last_end:].strip()
+            if _r:
+                sections.append({"header": last_hdr, "content": _r})
+        if not sections:
+            return [{"header": "", "content": text}]
+        return sections
+
+    # --- Build card elements ---
+    elements = []
+
+    # Info bar: channel / audience / due / priority
+    fields = []
+    fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**渠道**\n{ch_display}"}})
+    if task.audience:
+        fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**🎯 目标人群**\n{task.audience}"}})
+    if task.due_at:
+        fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**⏰ 截止**\n{task.due_at}"}})
+    if priority_label:
+        fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**优先级**\n{priority_label}"}})
+    if fields:
+        elements.append({"tag": "div", "fields": fields})
+
+    # Task title as subtitle
+    if task.title and task.title != ch_raw:
+        elements.append({"tag": "hr"})
+        elements.append({"tag": "div", "text": {"tag": "lark_md", "content": f"**📋 任务** {task.title}"}})
+
+    # Divider before main content
+    elements.append({"tag": "hr"})
+
+    # Main content: parse script into labeled sections
+    if task.script:
+        script_text = str(task.script)
+        _secs = _parse_sections(script_text)
+        _total = 0
+        _MAX = 3500
+        for _i, _s in enumerate(_secs):
+            _sc = _s["content"]
+            if _total + len(_sc) > _MAX:
+                _rem = _MAX - _total
+                if _rem > 50:
+                    _sc = _sc[:_rem] + "…"
+                else:
+                    break
+            _total += len(_sc)
+            if _s["header"]:
+                elements.append({"tag": "div", "text": {"tag": "lark_md", "content": f"**{_s['header']}**"}})
+                elements.append({"tag": "div", "text": {"tag": "lark_md", "content": _sc}})
+                if _i < len(_secs) - 1:
+                    elements.append({"tag": "hr"})
+            else:
+                elements.append({"tag": "div", "text": {"tag": "lark_md", "content": _sc}})
+
+    # Acceptance criteria
+    if task.acceptance:
+        elements.append({"tag": "hr"})
+        elements.append({"tag": "div", "text": {"tag": "lark_md", "content": f"**✅ 验收标准**\n{task.acceptance}"}})
+
+    # Instruction source context at the bottom
+    if instr_title or brand_name:
+        elements.append({"tag": "hr"})
+        _src = "📌 "
+        if brand_name:
+            _src += f"品牌：{brand_name}"
+        if instr_title:
+            _src += f" ｜ 指令：{instr_title}"
+        elements.append({"tag": "note", "elements": [{"tag": "plain_text", "content": _src[:200]}]})
+    else:
+        elements.append({"tag": "hr"})
+        elements.append({"tag": "note", "elements": [{"tag": "plain_text", "content": "由消费者运营中台自动下发"}]})
+
+    client = get_feishu_client(runtime.tenant_id)
+    if client.mock:
+        result = {"ok": False, "detail": "飞书未配置或未开启消息发送，请先在飞书配置页面填写信息并开启"}
+        return {"ok": False, "task_id": todo_id, "send_result": result, "mock": True}
+
+    try:
+        result = client.send_card(header_title, elements, header_template=header_color)
+    except Exception as exc:
+        _log_run(runtime.db, runtime.tenant_id, "feishu", "send_failed",
+                  instruction_id=task.instruction_id,
+                  detail=f"任务 {todo_id} 发送飞书失败: {exc}",
+                  operator=_auth.get("user", "运营"))
+        raise HTTPException(status_code=502, detail=f"飞书发送失败: {exc}")
+
+    if result.get("ok"):
+        task.status = "已下发"
+        task.external_ref = result.get("message_id", "")
+        runtime.db.commit()
+        _log_run(runtime.db, runtime.tenant_id, "feishu", "task_dispatched",
+                  instruction_id=task.instruction_id,
+                  detail=f"任务 {todo_id} 已下发到飞书群",
+                  operator=_auth.get("user", "运营"))
+
+    return {
+        "ok": result.get("ok", False),
+        "task_id": todo_id,
+        "task_title": task.title,
+        "status": task.status,
+        "send_result": result,
+    }
+
+
+router.add_api_route(
+    "/execution/todos/{todo_id}/send-feishu",
+    send_todo_to_feishu,
+    methods=["POST"],
     response_model=None,
 )

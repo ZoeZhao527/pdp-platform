@@ -1,24 +1,52 @@
 # Python
-.venv/
-venv/
 __pycache__/
+*.py[cod]
 *.pyc
 *.pyo
+.venv/
+venv/
+env/
+*.egg-info/
 .pytest_cache/
 
-# Environment & secrets
+# 运行时数据（绝不入库）
+backend/pdp.db
+backend/pdp.db-journal
+backend/*.db
+backend/*.db-journal
+*.sqlite
+*.sqlite-journal
+
+# 密钥与环境配置
 .env
 .env.local
 .env.*.local
-backend/.env
-backend/.env.local
-*.key
-*.pem
+*.secret
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
+# 日志与备份
+logs/
+*.log
+deploy/backups/
+deploy/deploy.log
+
+# 前端构建产物（源码在 web-src）
+web-dist/
+web-src/node_modules/
+web-src/dist/
+web-src/*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# macOS
+._*
+.AppleDouble
+.LSOverride
+
+# Alembic 备份
 *.bak
 
 # Node
@@ -42,3 +70,5 @@ web/node_modules/
 .DS_Store
 Thumbs.db
 web-dist/
+*.tmp
+*.bak
