@@ -4,25 +4,33 @@
 
 ## 红线（必先执行）
 
-1. **改后端代码前，必须先调用项目内的四个 skill**，加载规范后再动手：
-   - `fastapi-code-standards`（`.trae/skills/fastapi-code-standards/SKILL.md`）—— 统一返回体、异常处理、参数校验、分层命名
-   - `fastapi-logging-standards`（`.trae/skills/fastapi-logging-standards/SKILL.md`）—— 结构化日志、trace_id、脱敏、滚动删除
-   - `code-quality-gate`（`.trae/skills/code-quality-gate/SKILL.md`）—— ruff/mypy/pytest 闸门，commit 前必跑
-   - `deploy-gate`（`.trae/skills/deploy-gate/SKILL.md`）—— 部署前检查+必用 deploy.sh+失败必回滚
+1. **STOP — 改任何** **`backend/app/*.py`** **或部署前，必须先调用四个 skill 加载规范**。未调用 skill 直接改代码/部署 = 违规，必须停下补调。这四个 skill 必须按场景调用：
+
+   * `fastapi-code-standards`（`.trae/skills/fastapi-code-standards/SKILL.md`）—— 统一返回体、异常处理、参数校验、分层命名
+
+   * `fastapi-logging-standards`（`.trae/skills/fastapi-logging-standards/SKILL.md`）—— 结构化日志、trace\_id、脱敏、滚动删除
+
+   * `code-quality-gate`（`.trae/skills/code-quality-gate/SKILL.md`）—— ruff/mypy/pytest 闸门，commit 前必跑
+
+   * `deploy-gate`（`.trae/skills/deploy-gate/SKILL.md`）—— 部署前检查+必用 deploy.sh+失败必回滚
 
    触发场景：新增/修改任何 `backend/app/` 下的 `.py`、配置日志、新增接口或服务、部署/发布。
    注：Codex 在 `.agents/skills/` 下同名 skill；Trae 在 `.trae/skills/` 下。内容一致。
 
 2. **commit 前必须跑完质量闸门四道关卡**（详见 `code-quality-gate` skill）：
-   - `ruff check .` 0 error
-   - `mypy app/` 0 error
-   - `pytest -m smoke -v` 全绿
-   - `pytest -m snapshot -v` 全绿（快照变化必须人工确认）
-   
+
+   * `ruff check .` 0 error
+
+   * `mypy app/` 0 error
+
+   * `pytest -m smoke -v` 全绿
+
+   * `pytest -m snapshot -v` 全绿（快照变化必须人工确认）
+
    任何一道失败都不许跳过、不许 `--no-verify`、不许改测试/改配置来"通过"。
    前置：若项目未配 ruff/mypy/pytest，AI 必须先协助配置 `pyproject.toml` + `tests/`，否则闸门无效。
 
-3. **部署前必先调 `deploy-gate` skill，必须用 `scripts/deploy.sh`，禁止 AI 临时手搓部署命令。**
+3. **部署前必先调** **`deploy-gate`** **skill，必须用** **`scripts/deploy.sh`，禁止 AI 临时手搓部署命令。**
 
    * 本机部署：`bash scripts/deploy.sh --local`
 

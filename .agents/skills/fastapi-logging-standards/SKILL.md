@@ -1,6 +1,6 @@
 ---
 name: "fastapi-logging-standards"
-description: "Enforces FastAPI logging conventions: structured JSON logs, trace_id propagation, request/response logging, log levels, and sensitive field masking. Invoke when setting up logging, adding loggers to services, or when user asks to follow project logging standards."
+description: "FastAPI logging conventions: structured JSON logs, trace_id middleware, request/response access logs, level discipline, sensitive field masking, rotating file handler. Invoke when setting up logging, adding loggers to services, or modifying any backend code that calls logger. Trigger words: 配日志/log/trace_id/脱敏/日志/Logger. Do not invoke for non-logging code changes."
 ---
 
 # FastAPI 日志规范

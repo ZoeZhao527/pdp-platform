@@ -1,6 +1,6 @@
 ---
 name: "fastapi-code-standards"
-description: "Enforces FastAPI conventions: unified response wrapper, global exception handling, Pydantic validation, and layered naming. Invoke when creating FastAPI routers/services/schemas or when user asks to follow project code standards."
+description: "FastAPI code conventions: unified Response[T] wrapper, BizException + global exception_handler, Pydantic v2 Annotated validation, routers→services→repositories layering. Invoke when creating or modifying any backend/app/*.py, FastAPI router, service, schema, or repository. Trigger words: 新增接口/改后端/FastAPI/router/service/schema/DTO/VO. Do not invoke for frontend, scripts, docs, or non-Python files."
 ---
 
 # FastAPI 代码规范

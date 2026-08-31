@@ -1,6 +1,6 @@
 ---
 name: "code-quality-gate"
-description: "Quality gate for AI-generated Python changes: ruff lint, mypy type check, pytest smoke + snapshot tests before commit. Invoke when modifying backend Python code and preparing to commit/deploy, to ensure new features work and old features are not broken."
+description: "Pre-commit quality gate for Python backend: ruff check, mypy type check, pytest smoke + snapshot tests. Snapshot tests detect AI regressions in old features. Invoke when preparing to commit or deploy after modifying backend/app/*.py. Trigger words: commit/提交/部署前/质量检查/regression/跑测试. Do not skip, do not use --no-verify, do not modify tests to pass."
 ---
 
 # 代码质量闸门（AI 改完代码 commit 前必跑）

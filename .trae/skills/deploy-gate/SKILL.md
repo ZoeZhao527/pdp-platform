@@ -1,6 +1,6 @@
 ---
 name: "deploy-gate"
-description: "Deployment and rollback gate for AI-driven releases: pre-deploy checks (git clean, quality gate passed), use deploy.sh not ad-hoc commands, backup+log+healthcheck, rollback on failure. Invoke when deploying code, pushing to production, or recovering from failed deploy."
+description: "Deployment and rollback gate: git clean check + commit hash, use scripts/deploy.sh not ad-hoc rsync/ssh, auto backup+log+healthcheck, rollback on failure. Invoke when deploying code, pushing to production, recovering from failed deploy. Trigger words: 部署/发布/上线/回滚/deploy/rollback/推送到生产. Failure must rollback, never leave production broken."
 ---
 
 # 发布闸门（AI 部署前必跑）
