@@ -1607,3 +1607,47 @@ router.add_api_route(
     methods=["POST"],
     response_model=None,
 )
+
+
+
+
+# ── 3.0: 运行日志读取接口 ──
+def list_runlogs(
+    module: str | None = None,
+    instruction_id: str | None = None,
+    limit: int = 200,
+    runtime=Depends(get_runtime),
+    _auth: dict = Depends(require_roles("admin", "operator", "n")),
+):
+    """读取系统运行日志，支持按模块/指令过滤。"""
+    from app.models import SystemRunlog
+    q = (
+        runtime.db.query(SystemRunlog)
+        .filter(SystemRunlog.tenant_id == runtime.tenant_id)
+    )
+    if module:
+        q = q.filter(SystemRunlog.module == module)
+    if instruction_id:
+        q = q.filter(SystemRunlog.instruction_id == instruction_id)
+    rows = q.order_by(SystemRunlog.created_at.desc()).limit(limit).all()
+    return [
+        {
+            "id": r.id,
+            "instruction_id": r.instruction_id,
+            "module": r.module,
+            "event": r.event,
+            "detail": r.detail,
+            "operator": r.operator,
+            "extra": r.extra_json,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+
+router.add_api_route(
+    "/runlogs",
+    list_runlogs,
+    methods=["GET"],
+    response_model=None,
+)
