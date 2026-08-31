@@ -4,12 +4,13 @@
 
 ## 红线（必先执行）
 
-1. **改后端代码前，必须先调用项目内的三个 skill**，加载规范后再动手：
+1. **改后端代码前，必须先调用项目内的四个 skill**，加载规范后再动手：
    - `fastapi-code-standards`（`.trae/skills/fastapi-code-standards/SKILL.md`）—— 统一返回体、异常处理、参数校验、分层命名
    - `fastapi-logging-standards`（`.trae/skills/fastapi-logging-standards/SKILL.md`）—— 结构化日志、trace_id、脱敏、滚动删除
    - `code-quality-gate`（`.trae/skills/code-quality-gate/SKILL.md`）—— ruff/mypy/pytest 闸门，commit 前必跑
+   - `deploy-gate`（`.trae/skills/deploy-gate/SKILL.md`）—— 部署前检查+必用 deploy.sh+失败必回滚
 
-   触发场景：新增/修改任何 `backend/app/` 下的 `.py`、配置日志、新增接口或服务。
+   触发场景：新增/修改任何 `backend/app/` 下的 `.py`、配置日志、新增接口或服务、部署/发布。
    注：Codex 在 `.agents/skills/` 下同名 skill；Trae 在 `.trae/skills/` 下。内容一致。
 
 2. **commit 前必须跑完质量闸门四道关卡**（详见 `code-quality-gate` skill）：
@@ -21,7 +22,7 @@
    任何一道失败都不许跳过、不许 `--no-verify`、不许改测试/改配置来"通过"。
    前置：若项目未配 ruff/mypy/pytest，AI 必须先协助配置 `pyproject.toml` + `tests/`，否则闸门无效。
 
-3. **部署前必须用 `scripts/deploy.sh`，禁止 AI 临时手搓部署命令。**
+3. **部署前必先调 `deploy-gate` skill，必须用 `scripts/deploy.sh`，禁止 AI 临时手搓部署命令。**
 
    * 本机部署：`bash scripts/deploy.sh --local`
 
@@ -29,7 +30,9 @@
 
    * 失败回滚：`bash scripts/rollback.sh --to <备份名>` 或 `--local` 回滚到最近一次
 
-3. **改完代码必须先提交 git 再部署。** 部署脚本会读取 git commit 写进 `deploy/deploy.log`，没提交就没有回滚锚点。
+   部署前必查：`git status --short` 干净 + `git log -1 --oneline` 记 commit hash。失败必须回滚，禁止"线上挂着等会修"。
+
+4. **改完代码必须先提交 git 再部署。** 部署脚本会读取 git commit 写进 `deploy/deploy.log`，没提交就没有回滚锚点。
 
    ```bash
    git add -A && git commit -m "<改动说明>"
