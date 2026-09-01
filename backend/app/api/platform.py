@@ -876,6 +876,147 @@ _orig._llm_generate_activity_focused = _make_lite_wrapper(_orig._llm_generate_ac
 _orig._llm_generate_scripts_focused = _make_lite_wrapper(_orig._llm_generate_scripts_focused)
 _orig._llm_generate_daily_content = _make_lite_wrapper(_orig._llm_generate_daily_content)
 
+# ---------------------------------------------------------------------------
+# Monkey-patch _repair_json: the original cannot recover truncated JSON
+# (e.g. LLM output cut off mid-string).  Replace with a robust char-level
+# bracket/string scanner that closes open strings/brackets automatically.
+# ---------------------------------------------------------------------------
+def _patched_repair_json(raw):
+    """Best-effort repair of truncated JSON returned by an LLM.
+
+    Strategy:
+      1. Strip markdown fences, try json.loads directly.
+      2. Char-level scan tracking string context + bracket stack; if the
+         string is still open, append a closing quote; append a matching
+         closer for every unclosed '{' or '['.
+      3. If still invalid, walk forward to find the last *complete*
+         top-level JSON element and return that.
+      4. Give up (return None), matching original behaviour.
+    """
+    import json as _json
+    if not raw or not isinstance(raw, str):
+        return None
+    raw = raw.strip()
+    if not raw:
+        return None
+    # strip markdown code fences
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+    if raw.endswith("```"):
+        raw = raw[:-3].strip()
+    if not raw:
+        return None
+    # 1) direct parse
+    try:
+        _json.loads(raw)
+        return raw
+    except _json.JSONDecodeError:
+        pass
+    # 2) char-level scan: track string state + bracket stack
+    in_str = False
+    esc = False
+    stack = []
+    for ch in raw:
+        if esc:
+            esc = False
+            continue
+        if ch == "\\":
+            esc = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if not in_str:
+            if ch in "{[":
+                stack.append(ch)
+            elif ch == "}" and stack and stack[-1] == "{":
+                stack.pop()
+            elif ch == "]" and stack and stack[-1] == "[":
+                stack.pop()
+    suffix = ""
+    if in_str:
+        suffix += '"'
+    for opener in reversed(stack):
+        suffix += "}" if opener == "{" else "]"
+    candidate = raw + suffix
+    try:
+        _json.loads(candidate)
+        return candidate
+    except _json.JSONDecodeError:
+        pass
+    # 3) find last complete top-level element
+    best = None
+    depth = 0
+    seg_start = 0
+    in_s2 = False
+    esc2 = False
+    for i, ch in enumerate(raw):
+        if esc2:
+            esc2 = False
+            continue
+        if ch == "\\":
+            esc2 = True
+            continue
+        if ch == '"':
+            in_s2 = not in_s2
+            continue
+        if not in_s2:
+            if ch in "{[":
+                if depth == 0:
+                    seg_start = i
+                depth += 1
+            elif ch in "}]":
+                depth -= 1
+                if depth == 0:
+                    best = raw[seg_start : i + 1]
+    if best:
+        try:
+            _json.loads(best)
+            return best
+        except _json.JSONDecodeError:
+            pass
+    return None
+
+
+_orig._repair_json = _patched_repair_json
+
+# ---------------------------------------------------------------------------
+# Json proxy: wrap the *module-level* json reference in _orig so that ANY
+# json.loads call inside the bytecode module (e.g. _llm_strategy_reasoning,
+# which calls json.loads directly without going through _repair_json) gets
+# an automatic repair fallback when the LLM output is truncated mid-string.
+# ---------------------------------------------------------------------------
+class _JsonRepairProxy:
+    """Transparent proxy around the json module; adds repair fallback to loads."""
+
+    def __init__(self, real_json):
+        self._real = real_json
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def loads(self, raw, *args, **kwargs):
+        try:
+            return self._real.loads(raw, *args, **kwargs)
+        except Exception:
+            # Only attempt repair on string input; re-raise for non-strings.
+            if isinstance(raw, (bytes, bytearray)):
+                try:
+                    raw = raw.decode("utf-8", errors="replace")
+                except Exception:
+                    raise
+            if not isinstance(raw, str):
+                raise
+            repaired = _patched_repair_json(raw)
+            if repaired is not None:
+                return self._real.loads(repaired, *args, **kwargs)
+            raise
+
+
+_orig.json = _JsonRepairProxy(_orig.json)
+
+
+
 
 # ---------------------------------------------------------------------------
 # Remove old chat_instruction route, register patched version
@@ -941,7 +1082,7 @@ def chat_instruction(
             max_tokens=1024,
             response_format={"type": "json_object"},
         )
-        llm_result = _fut.result(timeout=15)
+        llm_result = _fut.result(timeout=30)
         _exec.shutdown(wait=False)
         raw = llm_result.content.strip()
         if raw.startswith("```"):
@@ -991,8 +1132,17 @@ def chat_instruction(
         title = msg[:20].replace("，", "·").replace("。", "").strip() or msg[:20]
 
 
-    # --- Safety net: if LLM didn't find missing dims, check with keyword rules ---
-    if len(_missing_dims) < 2:
+    # --- Follow-up detection: user already answered one clarification round.
+    #     Frontend merges the reply with the "（补充说明：" marker.
+    #     Skip the safety net entirely to break the clarification loop ---
+    _is_followup = "（补充说明：" in msg or "补充说明:" in msg
+    if _is_followup:
+        _missing_dims = []  # break loop: never re-clarify after one round
+
+    # --- Safety net: only on the FIRST round, and only when LLM found <2
+    #     missing dims. Trust the LLM's judgment when it succeeds; do NOT
+    #     override it with keyword rules that would re-trigger clarification. ---
+    elif len(_missing_dims) < 2:
         _has_audience = bool(params.get("layers")) or any(
             kw in msg for kw in [
                 "新客", "老客", "会员", "潜客", "体验客", "复购", "干皮",
@@ -1000,9 +1150,7 @@ def chat_instruction(
             ]
         )
         _has_budget = bool(params.get("budget")) or bool(params.get("goal_value"))
-        _has_activity = bool(params.get("activity_type")) or bool(
-            cb and isinstance(cb, dict) and cb.get("cards")
-        ) if 'cb' in dir() else bool(params.get("activity_type"))
+        _has_activity = bool(params.get("activity_type"))
         _has_channels = bool(params.get("content_channels"))
         _has_timeframe = any(
             kw in msg for kw in [
@@ -1022,14 +1170,26 @@ def chat_instruction(
         if not _has_timeframe:
             _missing_dims.append({"dimension": "timeframe", "question": "执行周期是什么时候？", "examples": ["本周", "本月", "秋季9月"]})
 
-    # --- 2. Clarification: if 2+ dimensions missing, ask user ---
-    if len(_missing_dims) >= 2:
+    # --- 2. Clarification: ask at most ONCE, and only if 3+ dims genuinely missing ---
+    if len(_missing_dims) >= 3 and not _is_followup:
         return {
             "needs_clarification": True,
             "title": title,
             "questions": _missing_dims[:3],
             "parsed_params": params,
         }
+
+    # --- Fill sensible defaults for any still-missing params (keeps downstream happy) ---
+    if not params.get("layers"):
+        params["layers"] = "新客+老客"
+    if not params.get("budget") and not params.get("goal_value"):
+        params["budget"] = "按实际产出核算"
+    if not params.get("activity_type"):
+        params["activity_type"] = "常规运营"
+    if not params.get("content_channels"):
+        params["content_channels"] = "朋友圈+1v1+社群"
+    if not params.get("automation_mode"):
+        params["automation_mode"] = "半自动"
 
     # --- 3. Create instruction ---
     raw_cb = getattr(payload, "campaign_brief", None)
