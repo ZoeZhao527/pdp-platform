@@ -44,7 +44,7 @@ class FlywheelAutomation:
                 .all()
             )
             for signal in existing_topics:
-                if score_relevance(signal.raw_content, industry_code) < 1.0:
+                if score_relevance(signal.raw_content, industry_code) < 0.3:
                     self.db.delete(signal)
                     removed_irrelevant += 1
         added = 0
@@ -54,7 +54,7 @@ class FlywheelAutomation:
         seen: set[tuple[str, str]] = set()
         for source_key, platform, keyword, heat, trend in rows:
             relevance = score_relevance(keyword, industry_code)
-            if relevance < 1.0:
+            if relevance < 0.3:
                 filtered += 1
                 continue
             key = (source_key, keyword)

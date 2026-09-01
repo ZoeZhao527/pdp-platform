@@ -43,16 +43,21 @@ GENERIC_KEYWORDS = [
 NOISE_KEYWORDS = [
     "剧", "综艺", "电影", "游戏", "电竞", "明星", "演唱会", "选秀", "比赛",
     "球", "番", "动漫", "小说", "票房", "绯闻", "八卦", "CP", "塌房",
+    "选举", "两会", "外交", "贪腐", "落马", "通报", "政策", "调控",
+    "地震", "洪水", "台风", "火灾", "事故", "遇难", "伤亡",
+    "足球", "篮球", "乒乓", "冬奥", "奥运", "联赛", "冠军",
+    "币圈", "炒股", "基金", "A股", "涨停", "跌停",
+    "贪官", "案件", "刑拘", "逮捕", "审判",
+    "离婚", "结婚", "出轨", "分手", "恋情",
+    "热搜", "词条", "刷屏", "出圈", "走红",
 ]
 
 
 def score_relevance(topic: str, industry_code: str | None) -> float:
-    """行业相关词加分，通用营销词小幅加分，娱乐/无关词强降权。"""
-    if not industry_code:
-        return 1.0
+    """行业相关词加分，通用营销词小幅加分，娱乐/无关词强降权。无行业时只做通用+噪声打分。"""
     text = (topic or "").lower()
     score = 0.0
-    for keyword in INDUSTRY_KEYWORDS.get(industry_code, []):
+    for keyword in INDUSTRY_KEYWORDS.get(industry_code or "", []):
         if keyword in text:
             score += 1.0
     for keyword in GENERIC_KEYWORDS:
