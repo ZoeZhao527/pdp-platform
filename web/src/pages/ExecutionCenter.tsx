@@ -278,7 +278,7 @@ export default function ExecutionCenter() {
       {tab === "catalog" && (
         <ModulePage templateTab="catalog">
           <div className="exec-grid">
-           {instructions.filter((item) => item.asset?.product_mix?.length).map((item) => (
+           {instructions.filter((item) => (item.asset?.card_structure?.cards?.length || item.asset?.product_mix?.length)).map((item) => (
              <InstructionModule key={item.id} item={item} title="货盘与卡项">
                 {(item.asset?.card_structure?.cards || []).length > 0 && (
                   <div style={{ marginBottom: 12 }}>
@@ -372,7 +372,7 @@ export default function ExecutionCenter() {
                 ) : null}
              </InstructionModule>
            ))}
-           {instructions.filter((item) => item.asset?.product_mix?.length).length === 0 && (
+           {instructions.filter((item) => (item.asset?.card_structure?.cards?.length || item.asset?.product_mix?.length)).length === 0 && (
              <div className="empty panel">还没有生成的货盘内容</div>
            )}
           </div>

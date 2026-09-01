@@ -219,7 +219,7 @@ function AssetView({ asset }: { asset: AssetPackage }) {
      {assetTab === "product" && (
      <>
 
-     {(card.cards?.length || card.summary || card.rules || card.reference) ? (
+     {(card.cards?.length || card.summary || card.rules) ? (
        <div className="asset-section">
          <h3>卡项结构</h3>
          {card.cards?.length ? (
@@ -254,12 +254,6 @@ function AssetView({ asset }: { asset: AssetPackage }) {
             <div className="cell-block">
               <span className="cell-label">组合规则</span>
               <p className="cell-text">{card.rules}</p>
-            </div>
-          )}
-          {card.reference && (
-            <div className="cell-block">
-              <span className="cell-label">真实卡项素材参考</span>
-              <p className="cell-text muted">{card.reference}</p>
             </div>
           )}
        </div>
